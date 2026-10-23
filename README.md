@@ -4,7 +4,7 @@
 ## 架構
 - React + TypeScript + Vite，部署 Vercel；瀏覽器只讀取已發布的 Supabase 分析。
 - Supabase Auth Magic Link，僅預先授權帳號；所有私人資料以 RLS 隔離。
-- Python 3.9+ 執行端負責 RSS/Atom、SQLite 暫存、Codex CLI 分析、驗證及原子發布。
+- Python 3.9+ 執行端負責 RSS/Atom、SQLite 暫存、Codex／Claude CLI 搜尋分析、驗證及原子發布。
 - 主機只主動連出，不需固定 IP 或公開家用主機連接埠。
 
 ## 全網搜尋
@@ -20,8 +20,9 @@ macOS 優先選用 ChatGPT.app 內附的新版 CLI；可透過 CODEX_BIN 覆寫�
 `WEB_SEARCH_INTERVAL_SECONDS=21600` 控制重新搜尋間距，並非排程。網站上記錄的監控時間也不會自行建立 launchd 排程。
 主機必須開機連網；Vercel 不會喚醒這台電腦。公開搜尋仍受搜尋索引、付費牆及網站存取限制，並非涵蓋所有網頁。
 
-## Codex 額度不足備援
-正常使用 Codex Terra medium；只有確定 Codex 額度不足（配額已滿或產生結構化 quota error）才改用本機 Claude Code 的 `claude-haiku-5-5`，搜尋與整理都支援切換。
+## 分析模型與搜尋備援
+分析、延續追蹤評估及詳細報告預設使用本機 Claude Code 的 `claude-haiku-5-5`，推理強度 medium，使用 Claude 訂閱登入。`ANALYSIS_PROVIDER=claude` 控制此設定；設為 `codex` 可恢復跟隨搜尋端模型。
+搜尋正常使用 Codex Terra medium；只有確定 Codex 額度不足（配額已滿或產生結構化 quota error）才改用 Claude 搜尋。搜尋與分析分開路由，Codex 重置後只切回搜尋，分析仍使用 Claude。
 登入失敗、額度未知、無效輸出與其他程式錯誤不會誤觸備援。若搜尋後整理才遇到額度不足，沿用已收集的文章；上傳失敗只重傳，不呼叫模型重做。
 執行紀錄會保存搜尋與分析各自的模型，包含混用情況。已知 Codex 重置時間會保存，重置前不反覆呼叫 Codex，到期後重新檢查並優先切回。
 

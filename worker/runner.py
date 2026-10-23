@@ -61,10 +61,10 @@ def build_payload(result,articles,config,job_id,owner,node,source_results):
             'candidates':candidates,'evaluations':evaluations}
 
 class Runner:
-    def __init__(self,store,cloud,codex,fetcher=fetch_feed,clock=time.time,buckets=('codex',),web_search=False,rss=True,search_interval=21600,fallback=None,detailed_reports=False):
+    def __init__(self,store,cloud,codex,fetcher=fetch_feed,clock=time.time,buckets=('codex',),web_search=False,rss=True,search_interval=21600,fallback=None,detailed_reports=False,analyzer=None):
         self.store=store;self.cloud=cloud;self.codex=codex;self.fetcher=fetcher;self.clock=clock;self.buckets=buckets
         self.web_search=web_search;self.rss=rss;self.search_interval=search_interval
-        self.fallback=fallback;self.active=codex;self.detailed_reports=detailed_reports
+        self.fallback=fallback;self.active=codex;self.detailed_reports=detailed_reports;self.analyzer=analyzer
     def activate_fallback(self):
         if not self.fallback:raise CodexFailure('Codex quota unavailable','waiting_quota')
         self.fallback.ensure_ready()
@@ -78,7 +78,13 @@ class Runner:
         self.store.set('codex_wait',q)
         return q
 
+    def analysis_model(self):
+        return self.analyzer if self.analyzer is not None else self.active
+
     def invoke(self,method,*args):
+        # Explicit analysis provider is independent of search quota/fallback routing.
+        if method in ('analyze','report') and self.analyzer is not None:
+            return getattr(self.analyzer,method)(*args)
         try:return getattr(self.active,method)(*args)
         except CodexFailure as e:
             if e.code!='waiting_quota' or self.active is not self.codex or not self.fallback:raise
@@ -88,9 +94,10 @@ class Runner:
 
     def execution(self,stamp):
         search=(stamp.get('provider') or {'provider':'codex','model':'unknown'}) if self.web_search else None
+        model=self.analysis_model()
         return {'collector':search.get('provider','codex')+' CLI live web search' if search else 'local Python RSS',
-                'provider':getattr(self.active,'provider','codex'),'model':getattr(self.active,'model','unknown'),
-                'reasoning_effort':getattr(self.active,'reasoning_effort','unknown'),
+                'provider':getattr(model,'provider','codex'),'model':getattr(model,'model','unknown'),
+                'reasoning_effort':getattr(model,'reasoning_effort','unknown'),
                 'web_search':self.web_search,'rss':self.rss,'search_execution':search,
                 'fallback_reason':'codex_quota_exhausted' if self.active is self.fallback else None}
 
@@ -188,7 +195,7 @@ class Runner:
             job={'id':str(uuid.uuid4()),'snapshot':json.dumps(snapshot),'articles':json.dumps(batch),'stage':'analyzing','payload':None}
             self.store.save_job(job)
         snapshot=json.loads(job['snapshot']);batch=json.loads(job['articles'])
-        self.status('fallback_running' if self.active is self.fallback else 'running')
+        self.status('claude_running' if self.analyzer is not None and getattr(self.analyzer,'provider',None)=='claude' else 'fallback_running' if self.active is self.fallback else 'running')
         try:
             if job['stage']=='reporting':
                 result=json.loads(job['payload'])
@@ -206,7 +213,7 @@ class Runner:
                     evidence=[a for a in batch if a['id'] in relevant]
                     context={**snapshot,'_source_results':source_results}
                     report=validate_report(self.invoke('report',purpose,evidence,context),purpose,evidence)
-                    report['_execution']={'provider':getattr(self.active,'provider','codex'),'model':getattr(self.active,'model','unknown')}
+                    report['_execution']={'provider':getattr(self.analysis_model(),'provider','codex'),'model':getattr(self.analysis_model(),'model','unknown')}
                     result['purpose_reports'].append(report)
                     job['payload']=json.dumps(result);self.store.save_job(job)
                 snapshot['purpose_reports']=result['purpose_reports']
@@ -263,8 +270,11 @@ def main():
         mode=args.collection or os.environ.get('COLLECTION_MODE','web')
         if mode not in ('web','hybrid','rss'):parser.error('Invalid COLLECTION_MODE')
         from .claude import Claude
+        analysis_provider=os.environ.get('ANALYSIS_PROVIDER','claude')
+        if analysis_provider not in ('claude','codex'):parser.error('Invalid ANALYSIS_PROVIDER')
+        analyzer=Claude() if analysis_provider=='claude' else None
         fallback=Claude() if os.environ.get('CLAUDE_FALLBACK_ENABLED','0')=='1' else None
-        runner=Runner(store,cloud,Codex(),fallback=fallback,detailed_reports=True,buckets=tuple(os.environ.get('CODEX_LIMIT_IDS','codex').split(',')),
+        runner=Runner(store,cloud,Codex(),fallback=fallback,detailed_reports=True,analyzer=analyzer,buckets=tuple(os.environ.get('CODEX_LIMIT_IDS','codex').split(',')),
                       web_search=mode!='rss',rss=mode!='web',search_interval=int(os.environ.get('WEB_SEARCH_INTERVAL_SECONDS','21600')))
         try:runner.cycle()
         except Exception as e:runner.status('failed','Worker failure: '+type(e).__name__)

@@ -35,6 +35,7 @@ publish_batch 是單一 Postgres 交易，文章、分析、候選、歷史全�
 追蹤狀態與目的版本在發布時再比對；過期結果保留歷史、標示不適用，不覆寫使用者操作。
 
 ## 報告與追蹤
+預設 ANALYSIS_PROVIDER=claude：文章分析、候選／追蹤評估與方向報告固定使用 Claude Haiku 5.5 medium。搜尋維持 Codex Terra medium，額度不足才使用 Claude 搜尋。搜尋端重置不影響已指定的分析模型；Claude 分析失敗保留待辦，不悄悄改用 Codex。
 每批分析後進入 reporting 階段，逐個方向整理報告，已完成內容存於本機 SQLite。完整結果連同 purpose_reports 放入 runs.config_snapshot，由既有 publish_batch 原子發布。
 報告只引用本批已驗證的 article ID；前端依文章表產生原文連結，不信任模型生成的 URL。各節包含段落、條列、表格與引用，缺口需明示。
 使用者從報告段落、後續觀察點或文章摘要建立 active 追蹤，編輯名稱與問題，原始內容存 track_notes。追蹤及筆記分兩次寫入；重試沿用同一 UUID，避免重複建立，全部成功才關閉表單。同方向完全相同的問題導向既有追蹤。

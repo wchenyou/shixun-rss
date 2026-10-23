@@ -58,3 +58,7 @@
 - 早期章節中模型不可用及登入尚未驗證等紀錄為當時狀態；現已完成本機 Codex Terra medium、Claude Haiku 5.5 實際搜尋整理及使用者登入。排程仍未啟用。
 - 正式 Vercel 部署 6efdbac 為 READY；正式網域真實 Supabase 瀏覽器整合測試通過，測試帳號已清除。
 - 本機實際模型完成 5 份方向報告與 35 篇來源分析，已於 2026-10-23 23:11（台北）原子發布至私人 Supabase。
+
+## Claude 作為主要分析模型
+- 46 項 Python 測試及 TypeScript／正式建置通過，新增 Codex 搜尋與 Claude 分析分離、報告固定路由、Claude 失敗保留工作三項驗證。
+- 本機 .env.worker 已指定 ANALYSIS_PROVIDER=claude、claude-haiku-5-5、medium；公開範例與 CLI 預設一致。現有已發布報告保留原始模型紀錄，新一輪分析套用 Claude。

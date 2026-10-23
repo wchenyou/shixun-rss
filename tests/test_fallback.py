@@ -101,3 +101,32 @@ class ClaudeSafetyTests(unittest.TestCase):
    with patch.object(Claude,'ensure_ready'),patch('worker.claude.subprocess.run',return_value=response):
     with self.assertRaises(CodexFailure) as caught:Claude().execute('test',schema)
   self.assertEqual(caught.exception.code,'fallback_model_failed')
+
+class AnalysisProviderTests(unittest.TestCase):
+ def setUp(self):
+  fixtures.WorkerTests.setUp(self)
+  self.claude=FakeFallback();self.runner.analyzer=self.claude
+  self.runner.web_search=True;self.runner.rss=False
+  self.codex.provider='codex';self.codex.model='gpt-5.6-terra'
+  self.searches=0
+  def search(config):
+   self.searches+=1
+   return self.claude.discover(config)
+  self.codex.discover=search
+ def tearDown(self):fixtures.WorkerTests.tearDown(self)
+ def test_codex_search_and_claude_analysis_are_independent(self):
+  self.runner.cycle()
+  self.assertEqual(self.searches,1);self.assertEqual(self.codex.calls,0);self.assertEqual(self.claude.calls,1)
+  execution=next(iter(self.cloud.published.values()))['run']['config_snapshot']['_execution']
+  self.assertEqual(execution['provider'],'claude');self.assertEqual(execution['model'],'claude-haiku-5-5')
+  self.assertEqual(execution['search_execution']['provider'],'codex');self.assertIsNone(execution['fallback_reason'])
+ def test_report_uses_claude_even_after_search_primary_reset(self):
+  self.claude.report=lambda *args:{'provider':'claude'}
+  self.runner.active=self.codex
+  self.assertEqual(self.runner.invoke('report',{},[],{}),{'provider':'claude'})
+ def test_claude_failure_does_not_silently_use_codex_for_analysis(self):
+  def fail(*args):raise CodexFailure('Claude quota','fallback_waiting_quota')
+  self.claude.analyze=fail
+  self.runner.cycle()
+  self.assertEqual(self.codex.calls,0);self.assertEqual(len(self.cloud.published),0)
+  self.assertEqual(self.store.get('status')['status'],'fallback_waiting_quota')
