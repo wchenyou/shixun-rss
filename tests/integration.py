@@ -13,8 +13,13 @@ def main():
  def request(path,body=None,token=key,method=None):
   headers={'apikey':key,'Authorization':'Bearer '+token,'Content-Type':'application/json'}
   req=Request(url+path,data=json.dumps(body).encode() if body is not None else None,headers=headers,method=method)
-  with urlopen(req,timeout=30) as r:
-   raw=r.read();return json.loads(raw) if raw else None
+  try:
+   with urlopen(req,timeout=30) as r:
+    raw=r.read();return json.loads(raw) if raw else None
+  except HTTPError as e:
+   detail=e.read().decode()
+   if e.code==422: print('API validation error:',detail[:500])
+   raise
  try:
   sessions=[]
   for i in range(2):

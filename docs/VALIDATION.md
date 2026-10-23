@@ -34,3 +34,5 @@
 - Supabase Auth Site URL 和 redirect allow list 已切換至 Vercel。
 - Vercel 環境變數 API 權限不足，改用版本控管的公開 publishable 連線設定；高權限憑證仍未提交。
 - 真實 RSS 抓取可用，但本機 Codex 生成測試被帳號以模型不支援拒絕（包含 CLI 宣告可用的模型）。尚未完成真實 AI 分析；不能將替身測試稱為真實模型端到端成功。需另核對正式主機 CLI／帳號可用模型，無排程已啟用。
+- 正式 Vercel 網站測試通過：桌面／手機登入首頁，以及真實 Supabase 測試帳號的閱讀、收藏、筆記重載、方向新增與追蹤狀態操作。
+- 修正 Supabase CLI 將 auth.email.enable_signup 映射為 Email provider 啟用設定的問題；遠端確認 external.email=true、disable_signup=true。
