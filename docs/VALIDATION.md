@@ -27,3 +27,10 @@
 
 ## 重現
 詳見 README。Live integration 測試會自行建立／刪除隔離測試帳號，需要本機 .env.worker。
+
+## Vercel 切換
+- 正式網站：https://shixun-rss.vercel.app/ ，Production 部署狀態 READY，HTTP 200。
+- GitHub Pages 已停用，GitHub 僅保存原始碼與執行 CI。
+- Supabase Auth Site URL 和 redirect allow list 已切換至 Vercel。
+- Vercel 環境變數 API 權限不足，改用版本控管的公開 publishable 連線設定；高權限憑證仍未提交。
+- 真實 RSS 抓取可用，但本機 Codex 生成測試被帳號以模型不支援拒絕（包含 CLI 宣告可用的模型）。尚未完成真實 AI 分析；不能將替身測試稱為真實模型端到端成功。需另核對正式主機 CLI／帳號可用模型，無排程已啟用。

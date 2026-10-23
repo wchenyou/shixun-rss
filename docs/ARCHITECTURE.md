@@ -16,7 +16,7 @@
 | 候選需確認、追蹤歷史 | tracks.status、evaluations |
 | 手機與電腦 | CSS responsive layout |
 | 來源缺口、發布／主機時間 | runs.source_results、nodes |
-| GitHub Pages | .github/workflows/pages.yml |
+| Vercel | vercel.json、Git integration；GitHub Actions 驗證 |
 
 ## 資料權限
 前端 publishable key 是公開識別，不是機密。資料權限由登入 JWT、owners admission、owner_id RLS 控制。

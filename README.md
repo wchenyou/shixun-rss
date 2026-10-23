@@ -2,13 +2,16 @@
 私人智慧 RSS 閱讀器：收集 → 理解 → 延續追蹤。
 
 ## 架構
-- React + TypeScript + Vite，部署 GitHub Pages；瀏覽器只讀取已發布的 Supabase 分析。
+- React + TypeScript + Vite，部署 Vercel；瀏覽器只讀取已發布的 Supabase 分析。
 - Supabase Auth Magic Link，僅預先授權帳號；所有私人資料以 RLS 隔離。
 - Python 3.9+ 執行端負責 RSS/Atom、SQLite 暫存、Codex CLI 分析、驗證及原子發布。
 - 主機只主動連出，不需固定 IP 或公開家用主機連接埠。
 
 ## 網站發布
-GitHub Actions 在 main 推送後執行測試、建置、發布 Pages。Repository Variables 需設定兩個 VITE_ 公開連線值。正式 base path 為 /shixun-rss/；網站網址為 https://wchenyou.github.io/shixun-rss/ 。
+正式網址：https://shixun-rss.vercel.app/
+GitHub main 推送後由 Vercel Git integration 自動部署。GitHub Actions 執行測試與建置。
+前端公開連線設定在 src/public-config.json，可用 VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY 覆寫。
+publishable key 可公開，私人資料由 Supabase Auth 與 RLS 控制；service_role 不可公開。
 
 ## 本機網站
 ```sh
