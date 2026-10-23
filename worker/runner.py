@@ -61,8 +61,9 @@ def build_payload(result,articles,config,job_id,owner,node,source_results):
             'candidates':candidates,'evaluations':evaluations}
 
 class Runner:
-    def __init__(self,store,cloud,codex,fetcher=fetch_feed,clock=time.time,buckets=('codex',)):
+    def __init__(self,store,cloud,codex,fetcher=fetch_feed,clock=time.time,buckets=('codex',),web_search=False,rss=True,search_interval=21600):
         self.store=store;self.cloud=cloud;self.codex=codex;self.fetcher=fetcher;self.clock=clock;self.buckets=buckets
+        self.web_search=web_search;self.rss=rss;self.search_interval=search_interval
     def status(self,status,error=None,next_retry=None):
         record={'status':status,'error':error,'last_seen':now(),'next_retry_at':datetime.fromtimestamp(next_retry,timezone.utc).isoformat() if next_retry else None,
                 'last_check_at':self.store.get('last_check_at'),**self.store.counts()}
@@ -83,17 +84,17 @@ class Runner:
         except Exception:
             self.status('failed','Cannot read cloud settings; no analysis started');return
         source_results=[]
-        for source in config['sources']:
+        for source in (config['sources'] if self.rss else []):
             if not source['enabled']:continue
             try:
                 articles=parse_feed(self.fetcher(source['url']),source,self.cloud.owner)
-                self.store.add(articles)
+                self.store.add(articles[:10] if self.web_search else articles)
                 source_results.append({'name':source['name'],'ok':True,'count':len(articles)})
             except Exception as e:source_results.append({'name':source['name'],'ok':False,'count':0,'error':type(e).__name__})
         self.store.set('source_results',source_results)
         if not any(p['enabled'] for p in config['purposes']):
             self.status('idle','Configure at least one enabled purpose');return
-        if not self.store.pending():
+        if not self.store.pending() and not self.web_search:
             self.status('failed' if any(not s['ok'] for s in source_results) else 'no_new',
                         'One or more RSS sources failed' if any(not s['ok'] for s in source_results) else None);return
         retry=self.store.get('next_retry',0)
@@ -107,6 +108,24 @@ class Runner:
         if q['status']!='available':
             self.wait(q);return
         self.store.set('attempt',0);self.store.set('next_retry',0)
+        if self.web_search:
+            stamp=self.store.get('web_search_cache',{})
+            digest=config_hash(config)
+            if stamp.get('config_hash')!=digest or self.clock()-stamp.get('at',0)>=self.search_interval:
+                self.status('searching')
+                try:
+                    discovered,coverage=self.codex.discover({**config,'_owner_id':self.cloud.owner})
+                    self.store.add(discovered)
+                    stamp={'config_hash':digest,'at':self.clock(),'coverage':coverage}
+                    self.store.set('web_search_cache',stamp)
+                except CodexFailure as e:
+                    self.wait({'status':e.code,'next_retry_at':self.clock()+900,'reason':str(e)});return
+                except Exception:
+                    self.wait({'status':'search_failed','next_retry_at':self.clock()+900,'reason':'Live discovery failed; no fabricated results published'});return
+            source_results=stamp.get('coverage',[])+source_results
+            self.store.set('source_results',source_results)
+        if not self.store.pending():
+            self.status('no_new');return
         # Resume persisted unfinished work; replan if any cloud settings/notes changed.
         unfinished=[j for j in self.store.jobs() if j['stage']=='analyzing']
         if unfinished:
@@ -116,7 +135,9 @@ class Runner:
                 self.store.db.execute('delete from jobs where id=?',(job['id'],));self.store.db.commit();unfinished=[]
         if not unfinished:
             batch=self.store.pending()
-            snapshot={**config,'_config_hash':config_hash(config),'_started_at':now()}
+            snapshot={**config,'_config_hash':config_hash(config),'_started_at':now(),
+                      '_execution':{'collector':'local Codex CLI live web search' if self.web_search else 'local Python RSS',
+                                    'model':getattr(self.codex,'model','unknown'),'web_search':self.web_search,'rss':self.rss}}
             snapshot['history']=self.cloud.history()
             # Keep all candidate identities, cap active context explicitly.
             snapshot['_active_track_total']=sum(t['status']=='active' for t in snapshot['tracks'])
@@ -152,6 +173,7 @@ class Runner:
 
 def main():
     parser=argparse.ArgumentParser()
+    parser.add_argument('--collection',choices=('web','hybrid','rss'),default=None,help='Default: web; hybrid also reads RSS')
     parser.add_argument('--once',action='store_true',help='Run one collection/analysis batch')
     parser.add_argument('--monitor',action='store_true',help='Run due recovery only; no regular schedule')
     args=parser.parse_args()
@@ -171,7 +193,10 @@ def main():
         store=Store(directory/'worker.sqlite3')
         if args.monitor and not store.jobs() and not store.get('next_retry',0):return
         cloud=Cloud(os.environ['SUPABASE_URL'],os.environ['SUPABASE_SECRET_KEY'],os.environ['OWNER_ID'],os.environ.get('NODE_ID','home-mac-mini'))
-        runner=Runner(store,cloud,Codex(os.environ.get('CODEX_BIN','codex')),buckets=tuple(os.environ.get('CODEX_LIMIT_IDS','codex').split(',')))
+        mode=args.collection or os.environ.get('COLLECTION_MODE','web')
+        if mode not in ('web','hybrid','rss'):parser.error('Invalid COLLECTION_MODE')
+        runner=Runner(store,cloud,Codex(),buckets=tuple(os.environ.get('CODEX_LIMIT_IDS','codex').split(',')),
+                      web_search=mode!='rss',rss=mode!='web',search_interval=int(os.environ.get('WEB_SEARCH_INTERVAL_SECONDS','21600')))
         try:runner.cycle()
         except Exception as e:runner.status('failed','Worker failure: '+type(e).__name__)
         print(json.dumps(store.get('status'),ensure_ascii=False))

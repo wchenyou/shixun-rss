@@ -7,6 +7,7 @@
 | 登入、擁有者隔離 | owners、RLS、Supabase Auth |
 | 雲端設定為準 | worker/cloud.py、Runner.cycle |
 | RSS/Atom、穩定 ID | worker/core.py |
+| 全網即時搜尋、工具證據校驗、網頁擷取 | worker/search.py、worker/codex.py |
 | Codex 結構化分析與驗證 | worker/codex.py、result.schema.json、validate_result |
 | 設定快照、重啟續跑 | SQLite jobs / articles / state |
 | 單一執行鎖 | flock，共用 .data/worker.lock |
@@ -30,6 +31,8 @@ publish_batch 是單一 Postgres 交易，文章、分析、候選、歷史全�
 追蹤狀態與目的版本在發布時再比對；過期結果保留歷史、標示不適用，不覆寫使用者操作。
 
 ## 已知工程限制
+- 全網模式：本機新版 Codex CLI 呼叫 OpenAI 即時搜尋，挑選的網址須存在於實際工具結果；Python 擷取原頁，失敗明確標示搜尋摘要。分析與搜尋分開執行。
+- 預設 web 模式不要求 RSS；hybrid 才附加訂閱。設定與搜尋結果會快取，額度檢查先於任何搜尋／分析。
 - 文章每輪 40 篇，分析文字 2,400 字元；一次最多 40 個正式追蹤。
 - 候選採目的＋正規化問題的穩定 ID，尚無完整跨措辭語意合併。
 - 網站逐頁載入已存資料，適合個人初期資料量；大規模使用需增加伺服端搜尋與 UI 分頁。

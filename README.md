@@ -1,11 +1,24 @@
 # 拾訊 Shixun
-私人智慧 RSS 閱讀器：收集 → 理解 → 延續追蹤。
+私人智慧情報閱讀器：搜尋公開網路 → 理解 → 延續追蹤。
 
 ## 架構
 - React + TypeScript + Vite，部署 Vercel；瀏覽器只讀取已發布的 Supabase 分析。
 - Supabase Auth Magic Link，僅預先授權帳號；所有私人資料以 RLS 隔離。
 - Python 3.9+ 執行端負責 RSS/Atom、SQLite 暫存、Codex CLI 分析、驗證及原子發布。
 - 主機只主動連出，不需固定 IP 或公開家用主機連接埠。
+
+## 全網搜尋
+預設執行 `python3 -m worker.runner --once --collection web`，依所有啟用的研究方向與正式追蹤搜尋公開網路，不受 RSS 清單限制。
+每輪最多選 30 個網址，必須能在實際搜尋工具結果找到；Python 擷取公開原頁，失敗則保留工具回傳的搜尋摘要並標示非全文。出版日期無法確認時保持空值，不把搜尋時間當作出版時間。
+
+實際路徑：本機 Python → 本機 Codex CLI → OpenAI 雲端模型及即時網路搜尋 → Supabase → Vercel。
+使用 Codex 的 ChatGPT 登入，不操作使用者原本的 ChatGPT 對話，不自動改用付費 API。
+macOS 優先選用 ChatGPT.app 內附的新版 CLI；可透過 CODEX_BIN 覆寫。預設模型為 gpt-6.1-sol，仍需帳號實測可用。
+
+`COLLECTION_MODE=web` 為預設；`hybrid` 附加 RSS（每源最多 10 篇）；`rss` 保留原訂閱模式。
+搜尋結果與設定雜湊會存入本機 SQLite，預設六小時內重用，設定變更時重新搜尋，避免恢復監控重複消耗模型額度。
+`WEB_SEARCH_INTERVAL_SECONDS=21600` 控制重新搜尋間距，並非排程。網站上記錄的監控時間也不會自行建立 launchd 排程。
+主機必須開機連網；Vercel 不會喚醒這台電腦。公開搜尋仍受搜尋索引、付費牆及網站存取限制，並非涵蓋所有網頁。
 
 ## 網站發布
 正式網址：https://shixun-rss.vercel.app/
@@ -33,7 +46,7 @@ npm test
 5. `python3 -m worker.install --interval-minutes 60` 只產生 launchd 檔案，請依輸出確認時間後安裝。
 
 `.env.worker` 與 `.data` 禁止提交。服務金鑰略過 RLS，是受控主機的高權限憑證；不能放進 VITE_ 變數或網頁。
-目前設定為每批一個模型呼叫；同一主機正常工作與恢復監控共用 flock，額度等待會釋放鎖。
+全網模式另有一次搜尋模型呼叫，再進行每批一次分析；同一主機正常工作與恢復監控共用 flock，額度等待會釋放鎖。
 未指定正式主機及排程前，不會自行安裝常駐服務。
 
 ## 可靠性
@@ -63,8 +76,8 @@ python3 -m tests.integration
 URL 正規化與穩定 ID 防止同文重複；尚不包含完整語意事件聚類。
 候選以「目的＋正規化研究問題」穩定識別；改寫措辭的相似問題仍可能形成不同候選，需人工判斷。
 最多帶入 40 個正式追蹤，完整候選身份與最近歷史一起提供上下文。此上限不代表所有項目均已評估。
-沒有股價、估值、交易、多用戶協作、付費服務、通知寄送或離線閱讀。
-來源是使用者自行設定；初始資料保持空白，不把測試資訊當正式新聞。
+尚未介接專用即時行情／籌碼 API；公開網頁可能提供行情或估值，必須保留時點與缺口。不提供交易執行、多用戶協作、通知寄送或離線閱讀。
+RSS 是可選補充來源；研究設定存在私人 Supabase，不公開到 GitHub。
 
 規格來源：[Notion AI RSS v5](https://app.notion.com/p/3ff9d64f640e8028aae2c4b2cc6501cc)
 官方技術依據：[Codex App Server](https://learn.chatgpt.com/docs/app-server)、[Codex non-interactive](https://learn.chatgpt.com/docs/non-interactive-mode)、[Supabase RLS](https://supabase.com/docs/guides/database/postgres/row-level-security)、[Email login](https://supabase.com/docs/guides/auth/auth-email-passwordless)。

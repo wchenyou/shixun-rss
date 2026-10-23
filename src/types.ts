@@ -62,8 +62,18 @@ export interface Run {
     ok: boolean;
     count: number;
     error?: string;
+    note?: string;
   }[];
-  config_snapshot: { purposes: Purpose[]; tracks: Track[] };
+  config_snapshot: {
+    purposes: Purpose[];
+    tracks: Track[];
+    _execution?: {
+      collector: string;
+      model: string;
+      web_search: boolean;
+      rss: boolean;
+    };
+  };
   error: string | null;
 }
 export interface NodeStatus {

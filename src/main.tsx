@@ -11,7 +11,10 @@ const labels: Record<string, string> = {
   paused: "已暫停",
   archived: "已封存",
   idle: "待命",
-  running: "處理中",
+  running: "分析中",
+  searching: "全網搜尋中",
+  search_failed: "網路搜尋失敗",
+  model_failed: "模型執行失敗",
   complete: "完成",
   partial: "部分完成",
   failed: "執行失敗",
@@ -305,8 +308,8 @@ function App() {
                   {node?.status === "waiting_quota"
                     ? "額度等待中，先前成果仍可閱讀。"
                     : last
-                      ? "閱讀已發布內容，新分析由主機定期產生。"
-                      : "設定方向與來源，等待主機發布第一份內容。"}
+                      ? "閱讀已發布內容，主機完成搜尋與分析後會發布新內容。"
+                      : "設定研究方向，等待主機搜尋並發布第一份內容。"}
                 </p>
               </section>
               {stale && (
@@ -439,7 +442,7 @@ function App() {
                           text={
                             query
                               ? "試試其他關鍵字或方向。"
-                              : "先加入你關心的方向和 RSS 來源。主機完成收集與分析後，內容就會出現在這裡。"
+                              : "先加入你關心的研究方向。主機完成全網搜尋與分析後，內容就會出現在這裡。"
                           }
                           action={() => navigate("settings")}
                           button="設定方向與來源"
@@ -535,58 +538,81 @@ function App() {
                 </>
               )}
               {page === "settings" && (
-                <div className="settings-grid">
-                  {(["purposes", "sources"] as const).map((kind) => (
-                    <section className="settings-section" key={kind}>
-                      <div className="section-heading">
-                        <h2>{kind === "purposes" ? "研究方向" : "RSS 來源"}</h2>
-                        <button
-                          className="primary"
-                          onClick={() => setEditing({ kind })}
-                        >
-                          ＋ 新增
-                        </button>
-                      </div>
-                      <p>
-                        {kind === "purposes"
-                          ? "告訴拾訊，你想從資訊裡理解什麼。"
-                          : "收集 RSS / Atom 提供的文字，保留原文連結。"}
-                      </p>
-                      {data[kind].map((item) => (
-                        <div className="setting-item" key={item.id}>
-                          <div>
-                            <strong>{item.name}</strong>
-                            <p>
-                              {"description" in item
-                                ? item.description
-                                : item.url}
-                            </p>
-                            <small>
-                              v{item.version} ·{" "}
-                              {item.enabled ? "啟用中" : "已暫停"}
-                            </small>
-                          </div>
+                <>
+                  <div className="alert">
+                    拾訊會依研究方向主動搜尋公開網路，不限於下列 RSS 網站。RSS
+                    是可選的補充來源，需主機啟用混合模式才會讀取。搜尋與分析由這台電腦的
+                    Codex
+                    執行，電腦需要開機並連網；原監控時間的文字紀錄不會自動建立排程。
+                  </div>
+                  <div className="settings-grid">
+                    {(["purposes", "sources"] as const).map((kind) => (
+                      <section className="settings-section" key={kind}>
+                        <div className="section-heading">
+                          <h2>
+                            {kind === "purposes" ? "研究方向" : "RSS 來源"}
+                          </h2>
                           <button
-                            onClick={() => setEditing({ kind, value: item })}
+                            className="primary"
+                            onClick={() => setEditing({ kind })}
                           >
-                            編輯
+                            ＋ 新增
                           </button>
                         </div>
-                      ))}
-                      {!data[kind].length && (
-                        <div className="small-empty">
-                          尚未新增{kind === "purposes" ? "研究方向" : "來源"}
-                        </div>
-                      )}
-                    </section>
-                  ))}
-                </div>
+                        <p>
+                          {kind === "purposes"
+                            ? "告訴拾訊，你想從資訊裡理解什麼。"
+                            : "可選的 RSS / Atom 補充來源；全網搜尋不受此清單限制。"}
+                        </p>
+                        {data[kind].map((item) => (
+                          <div className="setting-item" key={item.id}>
+                            <div>
+                              <strong>{item.name}</strong>
+                              <p>
+                                {"description" in item
+                                  ? item.description
+                                  : item.url}
+                              </p>
+                              <small>
+                                v{item.version} ·{" "}
+                                {item.enabled ? "啟用中" : "已暫停"}
+                              </small>
+                            </div>
+                            <button
+                              onClick={() => setEditing({ kind, value: item })}
+                            >
+                              編輯
+                            </button>
+                          </div>
+                        ))}
+                        {!data[kind].length && (
+                          <div className="small-empty">
+                            尚未新增{kind === "purposes" ? "研究方向" : "來源"}
+                          </div>
+                        )}
+                      </section>
+                    ))}
+                  </div>
+                </>
               )}
               {page === "status" && (
                 <>
                   <div className="settings-grid">
                     <section className="settings-section">
                       <h2>執行節點</h2>
+                      <p>
+                        本機 Codex CLI 呼叫 OpenAI
+                        雲端模型，完成搜尋與分析後寫入 Supabase。
+                      </p>
+                      {last?.config_snapshot._execution && (
+                        <p>
+                          最近批次：
+                          {last.config_snapshot._execution.web_search
+                            ? "全網搜尋"
+                            : "RSS"}{" "}
+                          · {last.config_snapshot._execution.model}
+                        </p>
+                      )}
                       <p>{node?.id || "尚無主機回報"}</p>
                       <dl>
                         <dt>狀態</dt>
@@ -615,7 +641,10 @@ function App() {
                       <h2>來源涵蓋</h2>
                       {last?.source_results.map((s, i) => (
                         <div className="setting-item" key={i}>
-                          <span>{s.name}</span>
+                          <div>
+                            <span>{s.name}</span>
+                            {s.note && <p>{s.note}</p>}
+                          </div>
                           <span>
                             {s.ok ? s.count + " 篇" : s.error || "抓取失敗"}
                           </span>
@@ -847,7 +876,7 @@ function Login({ configured }: { configured: boolean }) {
           好的問題，值得留下。
         </h2>
         <p>
-          讀取你關心的來源，整理有依據的摘要，
+          搜尋你關心的議題，整理有依據的摘要，
           <br />
           再讓每一個值得追蹤的問題持續累積。
         </p>
