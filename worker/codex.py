@@ -16,6 +16,7 @@ def safe_env():
     return {k:v for k,v in os.environ.items() if k in ('PATH','HOME','USER','TMPDIR','LANG','CODEX_HOME')}
 
 class Codex:
+    provider='codex'
     def __init__(self, binary=None, model=None, reasoning_effort=None):
         bundled=Path("/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex")
         self.binary=binary or os.environ.get("CODEX_BIN") or (str(bundled) if bundled.is_file() else "codex")

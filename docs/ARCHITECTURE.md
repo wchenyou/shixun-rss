@@ -8,6 +8,7 @@
 | 雲端設定為準 | worker/cloud.py、Runner.cycle |
 | RSS/Atom、穩定 ID | worker/core.py |
 | 全網即時搜尋、工具證據校驗、網頁擷取 | worker/search.py、worker/codex.py |
+| Codex 配額備援、Claude Haiku 5.5 | worker/claude.py、Runner.invoke／activate_fallback |
 | Codex 結構化分析與驗證 | worker/codex.py、result.schema.json、validate_result |
 | 設定快照、重啟續跑 | SQLite jobs / articles / state |
 | 單一執行鎖 | flock，共用 .data/worker.lock |
@@ -20,6 +21,7 @@
 | Vercel | vercel.json、Git integration；GitHub Actions 驗證 |
 
 ## 資料權限
+Claude 備援使用官方本機 CLI 的訂閱授權，與 Codex 一樣不取得 Supabase 憑證。只允許指定的搜尋工具，無 Bash／本機檔案工具；原頁擷取仍由受控 Python 程序驗證公開網址。
 前端 publishable key 是公開識別，不是機密。資料權限由登入 JWT、owners admission、owner_id RLS 控制。
 主機使用 service_role，具高權限並可略過 RLS。憑證只在 .env.worker；這是可信任個人主機架構，非多租戶隔離執行環境。
 SQL publication RPC 拒絕 anon/authenticated 執行；只允許 service_role。

@@ -20,6 +20,22 @@ macOS 優先選用 ChatGPT.app 內附的新版 CLI；可透過 CODEX_BIN 覆寫�
 `WEB_SEARCH_INTERVAL_SECONDS=21600` 控制重新搜尋間距，並非排程。網站上記錄的監控時間也不會自行建立 launchd 排程。
 主機必須開機連網；Vercel 不會喚醒這台電腦。公開搜尋仍受搜尋索引、付費牆及網站存取限制，並非涵蓋所有網頁。
 
+## Codex 額度不足備援
+正常使用 Codex Terra medium；只有確定 Codex 額度不足（配額已滿或產生結構化 quota error）才改用本機 Claude Code 的 `claude-haiku-5-5`，搜尋與整理都支援切換。
+登入失敗、額度未知、無效輸出與其他程式錯誤不會誤觸備援。若搜尋後整理才遇到額度不足，沿用已收集的文章；上傳失敗只重傳，不呼叫模型重做。
+執行紀錄會保存搜尋與分析各自的模型，包含混用情況。已知 Codex 重置時間會保存，重置前不反覆呼叫 Codex，到期後重新檢查並優先切回。
+
+安裝官方 CLI（固定本次驗證版本），再使用 Claude 訂閱登入：
+```sh
+npm install --prefix .data/claude-cli --no-audit --no-fund @anthropic-ai/claude-code@2.1.309
+.data/claude-cli/node_modules/.bin/claude auth login --claudeai
+```
+設定 `CLAUDE_FALLBACK_ENABLED=1`，可用 `CLAUDE_BIN` 指定其他安裝位置。
+僅接受 first-party Claude 訂閱登入，不讀取 ANTHROPIC_API_KEY 或自動切換付費 API。
+模型明確固定為 Haiku 5.5，並核對回傳的 modelUsage，不默默升級其他 Claude 模型。
+Claude 搜尋僅開放 WebSearch／WebFetch，整理時關閉工具；停用使用者／專案自訂、MCP、hooks 及會話保存，不把 Supabase 憑證傳入模型程序。
+兩邊都無法執行時保存本機工作，等待補跑，不發布未驗證內容。所有 CLI 都在本機啟動，AI 搜尋與運算由各供應商雲端執行。
+
 ## 網站發布
 正式網址：https://shixun-rss.vercel.app/
 GitHub main 推送後由 Vercel Git integration 自動部署。GitHub Actions 執行測試與建置。

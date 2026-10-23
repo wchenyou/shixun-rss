@@ -15,6 +15,12 @@ const labels: Record<string, string> = {
   searching: "全網搜尋中",
   search_failed: "網路搜尋失敗",
   model_failed: "模型執行失敗",
+  fallback_searching: "Claude 備援搜尋中",
+  fallback_running: "Claude 備援整理中",
+  fallback_unavailable: "Claude CLI 尚未就緒",
+  fallback_auth_required: "Claude 需要登入",
+  fallback_model_failed: "Claude 備援執行失敗",
+  fallback_waiting_quota: "等待 Claude 額度",
   complete: "完成",
   partial: "部分完成",
   failed: "執行失敗",
@@ -541,9 +547,9 @@ function App() {
                 <>
                   <div className="alert">
                     拾訊會依研究方向主動搜尋公開網路，不限於下列 RSS 網站。RSS
-                    是可選的補充來源，需主機啟用混合模式才會讀取。搜尋與分析由這台電腦的
-                    Codex
-                    執行，電腦需要開機並連網；原監控時間的文字紀錄不會自動建立排程。
+                    是可選的補充來源，需主機啟用混合模式才會讀取。搜尋與分析優先由本機
+                    Codex 執行，額度不足時改用本機 Claude Haiku 5.5。
+                    電腦需要開機並連網；原監控時間的文字紀錄不會自動建立排程。
                   </div>
                   <div className="settings-grid">
                     {(["purposes", "sources"] as const).map((kind) => (
@@ -601,8 +607,8 @@ function App() {
                     <section className="settings-section">
                       <h2>執行節點</h2>
                       <p>
-                        本機 Codex CLI 呼叫 OpenAI
-                        雲端模型，完成搜尋與分析後寫入 Supabase。
+                        本機執行端優先使用 Codex Terra；額度不足時改用 Claude
+                        Haiku 5.5，完成搜尋與分析後寫入 Supabase。
                       </p>
                       {last?.config_snapshot._execution && (
                         <p>

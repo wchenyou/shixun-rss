@@ -61,9 +61,39 @@ def build_payload(result,articles,config,job_id,owner,node,source_results):
             'candidates':candidates,'evaluations':evaluations}
 
 class Runner:
-    def __init__(self,store,cloud,codex,fetcher=fetch_feed,clock=time.time,buckets=('codex',),web_search=False,rss=True,search_interval=21600):
+    def __init__(self,store,cloud,codex,fetcher=fetch_feed,clock=time.time,buckets=('codex',),web_search=False,rss=True,search_interval=21600,fallback=None):
         self.store=store;self.cloud=cloud;self.codex=codex;self.fetcher=fetcher;self.clock=clock;self.buckets=buckets
         self.web_search=web_search;self.rss=rss;self.search_interval=search_interval
+        self.fallback=fallback;self.active=codex
+    def activate_fallback(self):
+        if not self.fallback:raise CodexFailure('Codex quota unavailable','waiting_quota')
+        self.fallback.ensure_ready()
+        self.active=self.fallback
+
+    def remember_limit(self):
+        try:q=quota_state(self.codex.quota(),self.buckets,self.store.get('attempt',0),self.clock())
+        except Exception:q={'status':'waiting_quota','next_retry_at':self.clock()+900,'reason':'Codex returned a structured quota failure'}
+        if q['status']!='waiting_quota':
+            q={'status':'waiting_quota','next_retry_at':self.clock()+900,'reason':'Codex returned a structured quota failure'}
+        self.store.set('codex_wait',q)
+        return q
+
+    def invoke(self,method,*args):
+        try:return getattr(self.active,method)(*args)
+        except CodexFailure as e:
+            if e.code!='waiting_quota' or self.active is not self.codex or not self.fallback:raise
+            self.remember_limit();self.activate_fallback()
+            self.status('fallback_searching' if method=='discover' else 'fallback_running')
+            return getattr(self.active,method)(*args)
+
+    def execution(self,stamp):
+        search=(stamp.get('provider') or {'provider':'codex','model':'unknown'}) if self.web_search else None
+        return {'collector':search.get('provider','codex')+' CLI live web search' if search else 'local Python RSS',
+                'provider':getattr(self.active,'provider','codex'),'model':getattr(self.active,'model','unknown'),
+                'reasoning_effort':getattr(self.active,'reasoning_effort','unknown'),
+                'web_search':self.web_search,'rss':self.rss,'search_execution':search,
+                'fallback_reason':'codex_quota_exhausted' if self.active is self.fallback else None}
+
     def status(self,status,error=None,next_retry=None):
         record={'status':status,'error':error,'last_seen':now(),'next_retry_at':datetime.fromtimestamp(next_retry,timezone.utc).isoformat() if next_retry else None,
                 'last_check_at':self.store.get('last_check_at'),**self.store.counts()}
@@ -98,25 +128,39 @@ class Runner:
             self.status('failed' if any(not s['ok'] for s in source_results) else 'no_new',
                         'One or more RSS sources failed' if any(not s['ok'] for s in source_results) else None);return
         retry=self.store.get('next_retry',0)
-        if retry and self.clock()<retry:
+        primary_reset=self.store.get('codex_wait',{}).get('next_retry_at')
+        may_recheck=bool(primary_reset and self.clock()>=primary_reset)
+        if retry and self.clock()<retry and not (self.fallback and (self.store.get('wait_status')=='waiting_quota' or may_recheck)):
             self.status(self.store.get('wait_status','waiting_quota'),self.store.get('wait_reason'),retry);return
+        cached=self.store.get('codex_wait',{})
         try:
-            q=quota_state(self.codex.quota(),self.buckets,self.store.get('attempt',0),self.clock())
-            self.store.set('last_check_at',now())
+            if cached.get('next_retry_at',0) and self.clock()<cached['next_retry_at']:
+                q=cached
+            else:
+                q=quota_state(self.codex.quota(),self.buckets,self.store.get('attempt',0),self.clock())
+                self.store.set('last_check_at',now())
+                self.store.set('codex_wait',q if q['status']=='waiting_quota' else {})
         except CodexFailure as e:q={'status':e.code,'next_retry_at':self.clock()+3600,'reason':str(e)}
         except Exception:q={'status':'quota_unknown','next_retry_at':self.clock()+3600,'reason':'Quota query failed'}
-        if q['status']!='available':
+        self.active=self.codex
+        if q['status']=='waiting_quota' and self.fallback:
+            try:self.activate_fallback()
+            except CodexFailure as e:
+                self.wait({'status':e.code,'next_retry_at':self.clock()+900,'reason':str(e)});return
+        elif q['status']!='available':
             self.wait(q);return
         self.store.set('attempt',0);self.store.set('next_retry',0)
+        stamp={}
         if self.web_search:
             stamp=self.store.get('web_search_cache',{})
             digest=config_hash(config)
             if stamp.get('config_hash')!=digest or self.clock()-stamp.get('at',0)>=self.search_interval:
-                self.status('searching')
+                self.status('fallback_searching' if self.active is self.fallback else 'searching')
                 try:
-                    discovered,coverage=self.codex.discover({**config,'_owner_id':self.cloud.owner})
+                    discovered,coverage=self.invoke('discover',{**config,'_owner_id':self.cloud.owner})
                     self.store.add(discovered)
-                    stamp={'config_hash':digest,'at':self.clock(),'coverage':coverage}
+                    stamp={'config_hash':digest,'at':self.clock(),'coverage':coverage,
+                           'provider':{'provider':getattr(self.active,'provider','codex'),'model':getattr(self.active,'model','unknown')}}
                     self.store.set('web_search_cache',stamp)
                 except CodexFailure as e:
                     self.wait({'status':e.code,'next_retry_at':self.clock()+900,'reason':str(e)});return
@@ -135,10 +179,7 @@ class Runner:
                 self.store.db.execute('delete from jobs where id=?',(job['id'],));self.store.db.commit();unfinished=[]
         if not unfinished:
             batch=self.store.pending()
-            snapshot={**config,'_config_hash':config_hash(config),'_started_at':now(),
-                      '_execution':{'collector':'local Codex CLI live web search' if self.web_search else 'local Python RSS',
-                                    'model':getattr(self.codex,'model','unknown'),
-                                    'reasoning_effort':getattr(self.codex,'reasoning_effort','unknown'),'web_search':self.web_search,'rss':self.rss}}
+            snapshot={**config,'_config_hash':config_hash(config),'_started_at':now(),'_execution':self.execution(stamp)}
             snapshot['history']=self.cloud.history()
             # Keep all candidate identities, cap active context explicitly.
             snapshot['_active_track_total']=sum(t['status']=='active' for t in snapshot['tracks'])
@@ -147,9 +188,11 @@ class Runner:
             job={'id':str(uuid.uuid4()),'snapshot':json.dumps(snapshot),'articles':json.dumps(batch),'stage':'analyzing','payload':None}
             self.store.save_job(job)
         snapshot=json.loads(job['snapshot']);batch=json.loads(job['articles'])
-        self.status('running')
+        self.status('fallback_running' if self.active is self.fallback else 'running')
         try:
-            result=validate_result(self.codex.analyze(batch,snapshot),batch,snapshot)
+            result=validate_result(self.invoke('analyze',batch,snapshot),batch,snapshot)
+            snapshot['_execution']=self.execution(stamp)
+            job['snapshot']=json.dumps(snapshot)
             payload=build_payload(result,batch,snapshot,job['id'],self.cloud.owner,self.cloud.node,source_results)
             job['payload']=json.dumps(payload);job['stage']='upload_pending';self.store.save_job(job)
         except CodexFailure as e:
@@ -159,8 +202,9 @@ class Runner:
                 if q['status']=='available':q={'status':'waiting_quota','next_retry_at':self.clock()+900,'reason':str(e)}
                 self.wait(q)
             else:
-                self.store.set('next_retry',self.clock()+3600);self.store.set('wait_status',e.code);self.store.set('wait_reason',str(e))
-                self.status(e.code,str(e),self.clock()+3600)
+                delay=900 if e.code.startswith('fallback_') else 3600
+                self.store.set('next_retry',self.clock()+delay);self.store.set('wait_status',e.code);self.store.set('wait_reason',str(e))
+                self.status(e.code,str(e),self.clock()+delay)
             return
         except Exception as e:
             self.store.set('next_retry',self.clock()+3600);self.store.set('wait_status','failed');self.store.set('wait_reason','Invalid or incomplete model output')
@@ -196,7 +240,9 @@ def main():
         cloud=Cloud(os.environ['SUPABASE_URL'],os.environ['SUPABASE_SECRET_KEY'],os.environ['OWNER_ID'],os.environ.get('NODE_ID','home-mac-mini'))
         mode=args.collection or os.environ.get('COLLECTION_MODE','web')
         if mode not in ('web','hybrid','rss'):parser.error('Invalid COLLECTION_MODE')
-        runner=Runner(store,cloud,Codex(),buckets=tuple(os.environ.get('CODEX_LIMIT_IDS','codex').split(',')),
+        from .claude import Claude
+        fallback=Claude() if os.environ.get('CLAUDE_FALLBACK_ENABLED','0')=='1' else None
+        runner=Runner(store,cloud,Codex(),fallback=fallback,buckets=tuple(os.environ.get('CODEX_LIMIT_IDS','codex').split(',')),
                       web_search=mode!='rss',rss=mode!='web',search_interval=int(os.environ.get('WEB_SEARCH_INTERVAL_SECONDS','21600')))
         try:runner.cycle()
         except Exception as e:runner.status('failed','Worker failure: '+type(e).__name__)
