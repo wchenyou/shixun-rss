@@ -962,3 +962,12 @@ dialog .note {
 }
 
 h1 { text-wrap: balance; }
+
+.welcome form .login-message {
+  padding: 14px 16px;
+  border: 1px solid var(--line, #d8dfd7);
+  border-radius: 10px;
+  background: #f0f5ed;
+  color: #244b37;
+  line-height: 1.7;
+}

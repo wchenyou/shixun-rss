@@ -864,28 +864,70 @@ function Login({ configured }: { configured: boolean }) {
           e.preventDefault();
           if (!supabase) return;
           setBusy(true);
+          setMessage("");
           const f = new FormData(e.currentTarget);
-          const { error } = await supabase.auth.signInWithOtp({
-            email: String(f.get("email")),
-            options: {
-              shouldCreateUser: false,
-              emailRedirectTo: new URL(
-                import.meta.env.BASE_URL,
-                window.location.origin,
-              ).href,
-            },
-          });
-          setMessage(
-            error ? error.message : "登入連結已寄出，請查看你的信箱。",
-          );
-          setBusy(false);
+          let timeout: ReturnType<typeof setTimeout> | undefined;
+          try {
+            const { error } = await Promise.race([
+              supabase.auth.signInWithOtp({
+                email: String(f.get("email")).trim(),
+                options: {
+                  shouldCreateUser: false,
+                  emailRedirectTo: new URL(
+                    import.meta.env.BASE_URL,
+                    window.location.origin,
+                  ).href,
+                },
+              }),
+              new Promise<never>((_, reject) => {
+                timeout = setTimeout(
+                  () => reject(new Error("login_timeout")),
+                  20000,
+                );
+              }),
+            ]);
+            if (error) {
+              const messages: Record<string, string> = {
+                signup_disabled:
+                  "此信箱尚未啟用。首次登入請先點擊管理員寄出的邀請信；已啟用的帳號請確認 Email 是否正確。",
+                over_email_send_rate_limit:
+                  "登入信寄送次數已達上限，請稍後再試，並先檢查收件匣與垃圾郵件。",
+                over_request_rate_limit: "操作太頻繁，請稍候再試。",
+                email_address_not_authorized:
+                  "寄信服務尚未授權此信箱，請聯絡管理員。",
+                email_provider_disabled:
+                  "Email 登入服務尚未啟用，請聯絡管理員。",
+              };
+              setMessage(
+                messages[
+                  error.code ||
+                    (/signups not allowed/i.test(error.message)
+                      ? "signup_disabled"
+                      : error.status === 429
+                        ? "over_email_send_rate_limit"
+                        : "")
+                ] || "無法寄送登入信：" + error.message,
+              );
+            } else {
+              setMessage(
+                "登入信寄送請求已受理。請查看收件匣與垃圾郵件，點擊最新一封信中的連結返回拾訊；不需要輸入密碼。",
+              );
+            }
+          } catch {
+            setMessage(
+              "連線未完成，請檢查網路並先查看信箱；若沒有收到信，請稍候再試。",
+            );
+          } finally {
+            clearTimeout(timeout);
+            setBusy(false);
+          }
         }}
       >
         <span className="tag">私人閱讀空間</span>
         <h2>歡迎回到拾訊</h2>
         <p>
           {configured
-            ? "使用已獲授權的 Email 登入。"
+            ? "輸入已授權的 Email，我們會寄送免密碼登入連結。首次使用請先開啟邀請信。"
             : "雲端尚未完成設定，完成後即可登入。"}
         </p>
         <label>
@@ -902,8 +944,14 @@ function Login({ configured }: { configured: boolean }) {
         <button className="primary" disabled={!configured || busy}>
           {busy ? "寄送中…" : "寄送登入連結 →"}
         </button>
-        {message && <p role="status">{message}</p>}
-        <small>僅限已授權帳號，未開放公開註冊。</small>
+        {message && (
+          <p className="login-message" role="status" aria-live="polite">
+            {message}
+          </p>
+        )}
+        <small>
+          送出後請到信箱點擊連結，才會進入閱讀空間。僅限已授權帳號，未開放公開註冊。
+        </small>
       </form>
     </section>
   );
