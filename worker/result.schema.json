@@ -1,0 +1,125 @@
+{
+  "type": "object",
+  "properties": {
+    "report": {
+      "type": "string"
+    },
+    "analyses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "article_id": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "relevance": {
+            "type": "string"
+          },
+          "purpose_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "article_id",
+          "summary",
+          "relevance",
+          "purpose_ids"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "purpose_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "evidence_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "summary": {
+            "type": "string"
+          },
+          "counter_evidence": {
+            "type": "string"
+          },
+          "next_question": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "purpose_id",
+          "title",
+          "question",
+          "evidence_ids",
+          "summary",
+          "counter_evidence",
+          "next_question"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "evaluations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "track_id": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "change": {
+            "type": "string"
+          },
+          "evidence_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "counter_evidence": {
+            "type": "string"
+          },
+          "next_question": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track_id",
+          "summary",
+          "change",
+          "evidence_ids",
+          "counter_evidence",
+          "next_question"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "report",
+    "analyses",
+    "candidates",
+    "evaluations"
+  ],
+  "additionalProperties": false
+}
