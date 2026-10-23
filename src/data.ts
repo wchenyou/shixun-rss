@@ -1,7 +1,8 @@
+import publicConfig from "./public-config.json";
 import { createClient } from "@supabase/supabase-js";
 import type { Dataset } from "./types";
-const url = import.meta.env.VITE_SUPABASE_URL,
-  key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const url = (import.meta.env.VITE_SUPABASE_URL || publicConfig.supabaseUrl),
+  key = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || publicConfig.supabasePublishableKey);
 export const supabase = url && key ? createClient(url, key) : null;
 export const emptyData: Dataset = {
   purposes: [],
