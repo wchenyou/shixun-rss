@@ -10,6 +10,8 @@
 | 全網即時搜尋、工具證據校驗、網頁擷取 | worker/search.py、worker/codex.py |
 | Codex 配額備援、Claude Haiku 5.5 | worker/claude.py、Runner.invoke／activate_fallback |
 | Codex 結構化分析與驗證 | worker/codex.py、result.schema.json、validate_result |
+| 依方向詳細整合報告、引用驗證 | worker/reports.py、report.schema.json、src/reports.tsx |
+| 從摘要建立追蹤、保留原始脈絡 | ReportReader.onTrack、tracks、track_notes |
 | 設定快照、重啟續跑 | SQLite jobs / articles / state |
 | 單一執行鎖 | flock，共用 .data/worker.lock |
 | 額度查詢與補跑 | quota_state、--monitor |
@@ -31,6 +33,11 @@ SQL publication RPC 拒絕 anon/authenticated 執行；只允許 service_role。
 publish_batch 是單一 Postgres 交易，文章、分析、候選、歷史全數成功才設定 published_at。
 重傳已發布 run_id 回傳同一 ID。資料庫複合外鍵拒絕跨 owner 關聯。
 追蹤狀態與目的版本在發布時再比對；過期結果保留歷史、標示不適用，不覆寫使用者操作。
+
+## 報告與追蹤
+每批分析後進入 reporting 階段，逐個方向整理報告，已完成內容存於本機 SQLite。完整結果連同 purpose_reports 放入 runs.config_snapshot，由既有 publish_batch 原子發布。
+報告只引用本批已驗證的 article ID；前端依文章表產生原文連結，不信任模型生成的 URL。各節包含段落、條列、表格與引用，缺口需明示。
+使用者從報告段落、後續觀察點或文章摘要建立 active 追蹤，編輯名稱與問題，原始內容存 track_notes。追蹤及筆記分兩次寫入；重試沿用同一 UUID，避免重複建立，全部成功才關閉表單。同方向完全相同的問題導向既有追蹤。
 
 ## 已知工程限制
 - 全網模式：本機新版 Codex CLI 呼叫 OpenAI 即時搜尋，挑選的網址須存在於實際工具結果；Python 擷取原頁，失敗明確標示搜尋摘要。分析與搜尋分開執行。

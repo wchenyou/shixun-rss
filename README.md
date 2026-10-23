@@ -42,6 +42,12 @@ GitHub main 推送後由 Vercel Git integration 自動部署。GitHub Actions �
 前端公開連線設定在 src/public-config.json，可用 VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY 覆寫。
 publishable key 可公開，私人資料由 Supabase Auth 與 RLS 控制；service_role 不可公開。
 
+## 閱讀與延續追蹤
+登入後預設顯示「方向分析報告」：選擇研究方向，閱讀整合脈絡、比較表、風險、觀察點與引用來源；「來源資料」保留逐篇摘要、原頁文字及收藏。
+在報告段落或「接下來值得觀察」按「延續追蹤」，修改名稱和希望持續關注的問題後按「開始追蹤」。逐篇摘要也有同樣入口。
+新項目直接進入追蹤中，並將原始摘要、方向、報告時間和來源存入個人筆記；「延續追蹤」頁用來管理狀態與查看後續評估。下一次主機分析才會更新結果，按鈕不會即時啟動本機模型。
+詳細報告與來源證據一起原子發布；中斷後從尚未完成的方向續跑。需要用已存來源重製詳細報告時執行 `python3 -m worker.runner --once --refresh-reports`。
+
 ## 本機網站
 ```sh
 npm ci
@@ -62,7 +68,7 @@ npm test
 5. `python3 -m worker.install --interval-minutes 60` 只產生 launchd 檔案，請依輸出確認時間後安裝。
 
 `.env.worker` 與 `.data` 禁止提交。服務金鑰略過 RLS，是受控主機的高權限憑證；不能放進 VITE_ 變數或網頁。
-全網模式另有一次搜尋模型呼叫，再進行每批一次分析；同一主機正常工作與恢復監控共用 flock，額度等待會釋放鎖。
+全網模式先呼叫搜尋，再進行批次分析及每個啟用方向各一次詳細報告整理；同一主機正常工作與恢復監控共用 flock，額度等待會釋放鎖。
 未指定正式主機及排程前，不會自行安裝常駐服務。
 
 ## 可靠性

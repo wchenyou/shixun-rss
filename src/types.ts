@@ -29,6 +29,23 @@ export interface Analysis {
   relevance: string;
   purpose_ids: string[];
 }
+export interface PurposeReport {
+  purpose_id: string;
+  title: string;
+  overview: string;
+  sections: {
+    heading: string;
+    paragraphs: string[];
+    bullets: string[];
+    tables: { headers: string[]; rows: string[][] }[];
+    evidence_ids: string[];
+  }[];
+  conclusion: string;
+  next_steps: string[];
+  limitations: string[];
+  evidence_ids: string[];
+  _execution?: { provider: string; model: string };
+}
 export interface Track {
   id: string;
   purpose_id: string;
@@ -65,6 +82,7 @@ export interface Run {
     note?: string;
   }[];
   config_snapshot: {
+    purpose_reports?: PurposeReport[];
     purposes: Purpose[];
     tracks: Track[];
     _execution?: {

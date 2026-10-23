@@ -61,10 +61,10 @@ def build_payload(result,articles,config,job_id,owner,node,source_results):
             'candidates':candidates,'evaluations':evaluations}
 
 class Runner:
-    def __init__(self,store,cloud,codex,fetcher=fetch_feed,clock=time.time,buckets=('codex',),web_search=False,rss=True,search_interval=21600,fallback=None):
+    def __init__(self,store,cloud,codex,fetcher=fetch_feed,clock=time.time,buckets=('codex',),web_search=False,rss=True,search_interval=21600,fallback=None,detailed_reports=False):
         self.store=store;self.cloud=cloud;self.codex=codex;self.fetcher=fetcher;self.clock=clock;self.buckets=buckets
         self.web_search=web_search;self.rss=rss;self.search_interval=search_interval
-        self.fallback=fallback;self.active=codex
+        self.fallback=fallback;self.active=codex;self.detailed_reports=detailed_reports
     def activate_fallback(self):
         if not self.fallback:raise CodexFailure('Codex quota unavailable','waiting_quota')
         self.fallback.ensure_ready()
@@ -171,7 +171,7 @@ class Runner:
         if not self.store.pending():
             self.status('no_new');return
         # Resume persisted unfinished work; replan if any cloud settings/notes changed.
-        unfinished=[j for j in self.store.jobs() if j['stage']=='analyzing']
+        unfinished=[j for j in self.store.jobs() if j['stage'] in ('analyzing','reporting')]
         if unfinished:
             job=unfinished[0]
             previous=json.loads(job['snapshot'])
@@ -190,7 +190,26 @@ class Runner:
         snapshot=json.loads(job['snapshot']);batch=json.loads(job['articles'])
         self.status('fallback_running' if self.active is self.fallback else 'running')
         try:
-            result=validate_result(self.invoke('analyze',batch,snapshot),batch,snapshot)
+            if job['stage']=='reporting':
+                result=json.loads(job['payload'])
+            else:
+                result=validate_result(self.invoke('analyze',batch,snapshot),batch,snapshot)
+                if self.detailed_reports:
+                    result['purpose_reports']=[]
+                    job['stage']='reporting';job['payload']=json.dumps(result);self.store.save_job(job)
+            if self.detailed_reports:
+                from .reports import validate_report
+                completed={r['purpose_id'] for r in result['purpose_reports']}
+                for purpose in snapshot['purposes']:
+                    if not purpose['enabled'] or purpose['id'] in completed:continue
+                    relevant={a['article_id'] for a in result['analyses'] if purpose['id'] in a['purpose_ids']}
+                    evidence=[a for a in batch if a['id'] in relevant]
+                    context={**snapshot,'_source_results':source_results}
+                    report=validate_report(self.invoke('report',purpose,evidence,context),purpose,evidence)
+                    report['_execution']={'provider':getattr(self.active,'provider','codex'),'model':getattr(self.active,'model','unknown')}
+                    result['purpose_reports'].append(report)
+                    job['payload']=json.dumps(result);self.store.save_job(job)
+                snapshot['purpose_reports']=result['purpose_reports']
             snapshot['_execution']=self.execution(stamp)
             job['snapshot']=json.dumps(snapshot)
             payload=build_payload(result,batch,snapshot,job['id'],self.cloud.owner,self.cloud.node,source_results)
@@ -219,6 +238,7 @@ class Runner:
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--collection',choices=('web','hybrid','rss'),default=None,help='Default: web; hybrid also reads RSS')
+    parser.add_argument('--refresh-reports',action='store_true',help='Rebuild detailed reports using the latest local evidence')
     parser.add_argument('--once',action='store_true',help='Run one collection/analysis batch')
     parser.add_argument('--monitor',action='store_true',help='Run due recovery only; no regular schedule')
     args=parser.parse_args()
@@ -236,13 +256,15 @@ def main():
         try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BlockingIOError:return
         store=Store(directory/'worker.sqlite3')
+        if args.refresh_reports:
+            store.db.execute('update articles set done=0 where id in (select id from articles order by rowid desc limit 40)');store.db.commit()
         if args.monitor and not store.jobs() and not store.get('next_retry',0):return
         cloud=Cloud(os.environ['SUPABASE_URL'],os.environ['SUPABASE_SECRET_KEY'],os.environ['OWNER_ID'],os.environ.get('NODE_ID','home-mac-mini'))
         mode=args.collection or os.environ.get('COLLECTION_MODE','web')
         if mode not in ('web','hybrid','rss'):parser.error('Invalid COLLECTION_MODE')
         from .claude import Claude
         fallback=Claude() if os.environ.get('CLAUDE_FALLBACK_ENABLED','0')=='1' else None
-        runner=Runner(store,cloud,Codex(),fallback=fallback,buckets=tuple(os.environ.get('CODEX_LIMIT_IDS','codex').split(',')),
+        runner=Runner(store,cloud,Codex(),fallback=fallback,detailed_reports=True,buckets=tuple(os.environ.get('CODEX_LIMIT_IDS','codex').split(',')),
                       web_search=mode!='rss',rss=mode!='web',search_interval=int(os.environ.get('WEB_SEARCH_INTERVAL_SECONDS','21600')))
         try:runner.cycle()
         except Exception as e:runner.status('failed','Worker failure: '+type(e).__name__)

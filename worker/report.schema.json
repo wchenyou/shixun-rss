@@ -1,0 +1,111 @@
+{
+  "type": "object",
+  "properties": {
+    "purpose_id": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "overview": {
+      "type": "string"
+    },
+    "sections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "heading": {
+            "type": "string"
+          },
+          "paragraphs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "bullets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tables": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "headers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "rows": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "required": [
+                "headers",
+                "rows"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "evidence_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "heading",
+          "paragraphs",
+          "bullets",
+          "tables",
+          "evidence_ids"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "conclusion": {
+      "type": "string"
+    },
+    "next_steps": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidence_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "purpose_id",
+    "title",
+    "overview",
+    "sections",
+    "conclusion",
+    "next_steps",
+    "limitations",
+    "evidence_ids"
+  ],
+  "additionalProperties": false
+}

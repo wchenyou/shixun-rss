@@ -4,6 +4,7 @@ import type { Session } from "@supabase/supabase-js";
 import { supabase, emptyData, fetchAll } from "./data";
 import type { Dataset, Track, Article, Purpose, Source } from "./types";
 import "./style.css";
+import { ReportReader, type TrackingSelection } from "./reports";
 
 const labels: Record<string, string> = {
   candidate: "待確認",
@@ -42,6 +43,7 @@ const time = (s: string | null | undefined) =>
     : "尚無紀錄";
 const safeUrl = (s: string) => (/^https?:\/\//i.test(s) ? s : "#");
 function App() {
+  const [readingMode, setReadingMode] = useState("reports");
   const [session, setSession] = useState<Session | null>(null),
     [ready, setReady] = useState(false);
   const [data, setData] = useState<Dataset>(emptyData),
@@ -54,6 +56,80 @@ function App() {
     [filter, setFilter] = useState("all");
   const [selected, setSelected] = useState<Article | null>(null),
     [track, setTrack] = useState<Track | null>(null);
+  const [trackingDraft, setTrackingDraft] = useState<
+    | (TrackingSelection & {
+        id: string;
+        question: string;
+      })
+    | null
+  >(null);
+  const [trackingSaving, setTrackingSaving] = useState(false);
+  const [trackingError, setTrackingError] = useState("");
+  function startTracking(selection: TrackingSelection) {
+    setTrackingError("");
+    setSelected(null);
+    setTrackingDraft({
+      ...selection,
+      id: crypto.randomUUID(),
+      question: `持續追蹤「${selection.title}」的最新進展、影響與需要驗證的變化。`,
+    });
+  }
+  async function saveTracking() {
+    if (!trackingDraft || !supabase || !session) return;
+    const draft = trackingDraft;
+    const title = draft.title.trim(),
+      question = draft.question.trim();
+    if (!title || !question) return;
+    const existing = data.tracks.find(
+      (t) =>
+        t.purpose_id === draft.purpose_id &&
+        t.question.trim() === question &&
+        t.id !== draft.id,
+    );
+    if (existing) {
+      setTrackingDraft(null);
+      navigate("tracks");
+      setTrack(existing);
+      setNotice("這個問題已在延續追蹤中");
+      return;
+    }
+    setTrackingSaving(true);
+    setTrackingError("");
+    try {
+      await write("tracks", {
+        id: draft.id,
+        purpose_id: draft.purpose_id,
+        title,
+        question,
+        status: "active",
+      });
+      const sources = draft.evidence_ids
+        .map((id) => data.articles.find((a) => a.id === id))
+        .filter((a): a is Article => !!a);
+      await write(
+        "track_notes",
+        {
+          track_id: draft.id,
+          note: [
+            `來自報告：${draft.report}`,
+            `發布：${time(draft.published_at)}`,
+            "原始摘要：",
+            draft.excerpt,
+            "引用來源：",
+            ...sources.map((a) => `${a.title}\n${a.url}`),
+          ].join("\n\n"),
+        },
+        undefined,
+        "owner_id,track_id",
+      );
+      setTrackingDraft(null);
+      setNotice("已加入延續追蹤；下一輪分析會依這個問題搜尋並更新進展。");
+    } catch (e) {
+      setTrackingError((e as Error).message);
+    } finally {
+      setTrackingSaving(false);
+    }
+  }
   const [editing, setEditing] = useState<{
     kind: "purposes" | "sources";
     value?: Purpose | Source;
@@ -325,175 +401,209 @@ function App() {
               )}
               {(page === "read" || page === "saved") && (
                 <>
-                  <div className="toolbar">
-                    <div className="tabs">
+                  {page === "read" && (
+                    <div
+                      className="tabs reading-modes"
+                      role="group"
+                      aria-label="閱讀模式"
+                    >
                       <button
-                        className={filter === "all" ? "chosen" : ""}
-                        onClick={() => setFilter("all")}
+                        className={readingMode === "reports" ? "chosen" : ""}
+                        onClick={() => setReadingMode("reports")}
                       >
-                        {page === "saved" ? "所有收藏" : "所有資訊"}
+                        方向分析報告
                       </button>
                       <button
-                        className={filter === "unread" ? "chosen" : ""}
-                        onClick={() => setFilter("unread")}
+                        className={readingMode === "sources" ? "chosen" : ""}
+                        onClick={() => setReadingMode("sources")}
                       >
-                        未讀
+                        來源資料
                       </button>
                     </div>
-                    <div className="searches">
-                      <select
-                        aria-label="篩選研究方向"
-                        value={purpose}
-                        onChange={(e) => setPurpose(e.target.value)}
-                      >
-                        <option value="all">所有方向</option>
-                        {data.purposes.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name}
-                          </option>
-                        ))}
-                      </select>
-                      <input
-                        aria-label="搜尋文章"
-                        placeholder="搜尋標題、摘要或內容…"
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="reading-layout">
-                    <section className="article-list">
-                      <div className="list-label">
-                        <span>
-                          {page === "saved"
-                            ? "SAVED FOR LATER"
-                            : "YOUR READING LIST"}
-                        </span>
-                        <span>{shown.length} 篇資訊</span>
+                  )}
+                  {page === "read" && readingMode === "reports" ? (
+                    <ReportReader
+                      runs={runs}
+                      purposes={data.purposes}
+                      articles={data.articles}
+                      onTrack={startTracking}
+                    />
+                  ) : (
+                    <>
+                      <div className="toolbar">
+                        <div className="tabs">
+                          <button
+                            className={filter === "all" ? "chosen" : ""}
+                            onClick={() => setFilter("all")}
+                          >
+                            {page === "saved" ? "所有收藏" : "所有資訊"}
+                          </button>
+                          <button
+                            className={filter === "unread" ? "chosen" : ""}
+                            onClick={() => setFilter("unread")}
+                          >
+                            未讀
+                          </button>
+                        </div>
+                        <div className="searches">
+                          <select
+                            aria-label="篩選研究方向"
+                            value={purpose}
+                            onChange={(e) => setPurpose(e.target.value)}
+                          >
+                            <option value="all">所有方向</option>
+                            {data.purposes.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.name}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            aria-label="搜尋文章"
+                            placeholder="搜尋標題、摘要或內容…"
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                          />
+                        </div>
                       </div>
-                      {shown.length ? (
-                        shown.map((a, i) => {
-                          const ai = analyses.get(a.id),
-                            state = data.article_states.find(
-                              (s) => s.article_id === a.id,
-                            );
-                          return (
-                            <article className="article" key={a.id}>
-                              <span className="article-number">
-                                {String(i + 1).padStart(2, "0")}
-                              </span>
-                              <div>
-                                <div className="meta">
-                                  {a.source_name}
-                                  <span>·</span>
-                                  {time(a.published_at || a.collected_at)}
-                                  <span className="tag">
-                                    {ai ? "AI 已整理" : "尚未分析"}
+                      <div className="reading-layout">
+                        <section className="article-list">
+                          <div className="list-label">
+                            <span>
+                              {page === "saved"
+                                ? "SAVED FOR LATER"
+                                : "YOUR READING LIST"}
+                            </span>
+                            <span>{shown.length} 篇資訊</span>
+                          </div>
+                          {shown.length ? (
+                            shown.map((a, i) => {
+                              const ai = analyses.get(a.id),
+                                state = data.article_states.find(
+                                  (s) => s.article_id === a.id,
+                                );
+                              return (
+                                <article className="article" key={a.id}>
+                                  <span className="article-number">
+                                    {String(i + 1).padStart(2, "0")}
                                   </span>
-                                  {state?.read && <span>已讀</span>}
-                                </div>
+                                  <div>
+                                    <div className="meta">
+                                      {a.source_name}
+                                      <span>·</span>
+                                      {time(a.published_at || a.collected_at)}
+                                      <span className="tag">
+                                        {ai ? "AI 已整理" : "尚未分析"}
+                                      </span>
+                                      {state?.read && <span>已讀</span>}
+                                    </div>
+                                    <button
+                                      className="article-title"
+                                      onClick={() => {
+                                        setSelected(a);
+                                        void articleState(a.id, {
+                                          read: true,
+                                        }).catch(() => {});
+                                      }}
+                                    >
+                                      {a.title}
+                                    </button>
+                                    <p>
+                                      {ai?.summary ||
+                                        a.content.slice(0, 180) ||
+                                        "來源只提供標題，請開啟原文閱讀。"}
+                                    </p>
+                                    {ai?.relevance && (
+                                      <div className="relevance">
+                                        ↳ {ai.relevance}
+                                      </div>
+                                    )}
+                                    <div className="article-actions">
+                                      <a
+                                        href={safeUrl(a.url)}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                      >
+                                        閱讀原文 ↗
+                                      </a>
+                                      <button
+                                        aria-label={
+                                          state?.saved ? "取消收藏" : "收藏文章"
+                                        }
+                                        onClick={() =>
+                                          void articleState(a.id, {
+                                            saved: !state?.saved,
+                                          }).catch(() => {})
+                                        }
+                                      >
+                                        {state?.saved ? "◆ 已收藏" : "◇ 收藏"}
+                                      </button>
+                                    </div>
+                                  </div>
+                                </article>
+                              );
+                            })
+                          ) : (
+                            <Empty
+                              title={
+                                query
+                                  ? "沒有符合的資訊"
+                                  : "留一點空間，給值得讀的資訊。"
+                              }
+                              text={
+                                query
+                                  ? "試試其他關鍵字或方向。"
+                                  : "先加入你關心的研究方向。主機完成全網搜尋與分析後，內容就會出現在這裡。"
+                              }
+                              action={() => navigate("settings")}
+                              button="設定方向與來源"
+                            />
+                          )}
+                        </section>
+                        <aside className="reading-side">
+                          <section className="digest">
+                            <span className="eyebrow">THE BIG PICTURE</span>
+                            <h2>這一輪的綜合筆記</h2>
+                            <p className="preserve">
+                              {last?.report ||
+                                "把分散的消息連成脈絡。第一輪分析完成後，這裡會整理新線索、矛盾與值得再看的問題。"}
+                            </p>
+                            <small>資料截止 {time(last?.data_cutoff)}</small>
+                          </section>
+                          <section className="side-tracks">
+                            <div className="section-heading">
+                              <h2>值得延續的問題</h2>
+                              <span>↗</span>
+                            </div>
+                            {data.tracks
+                              .filter((t) => t.status === "candidate")
+                              .slice(0, 3)
+                              .map((t) => (
                                 <button
-                                  className="article-title"
+                                  className="candidate-link"
+                                  key={t.id}
                                   onClick={() => {
-                                    setSelected(a);
-                                    void articleState(a.id, {
-                                      read: true,
-                                    }).catch(() => {});
+                                    navigate("tracks");
+                                    setTrack(t);
                                   }}
                                 >
-                                  {a.title}
+                                  {t.title}
+                                  <span>查看候選 →</span>
                                 </button>
-                                <p>
-                                  {ai?.summary ||
-                                    a.content.slice(0, 180) ||
-                                    "來源只提供標題，請開啟原文閱讀。"}
-                                </p>
-                                {ai?.relevance && (
-                                  <div className="relevance">
-                                    ↳ {ai.relevance}
-                                  </div>
-                                )}
-                                <div className="article-actions">
-                                  <a
-                                    href={safeUrl(a.url)}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                  >
-                                    閱讀原文 ↗
-                                  </a>
-                                  <button
-                                    aria-label={
-                                      state?.saved ? "取消收藏" : "收藏文章"
-                                    }
-                                    onClick={() =>
-                                      void articleState(a.id, {
-                                        saved: !state?.saved,
-                                      }).catch(() => {})
-                                    }
-                                  >
-                                    {state?.saved ? "◆ 已收藏" : "◇ 收藏"}
-                                  </button>
-                                </div>
-                              </div>
-                            </article>
-                          );
-                        })
-                      ) : (
-                        <Empty
-                          title={
-                            query
-                              ? "沒有符合的資訊"
-                              : "留一點空間，給值得讀的資訊。"
-                          }
-                          text={
-                            query
-                              ? "試試其他關鍵字或方向。"
-                              : "先加入你關心的研究方向。主機完成全網搜尋與分析後，內容就會出現在這裡。"
-                          }
-                          action={() => navigate("settings")}
-                          button="設定方向與來源"
-                        />
-                      )}
-                    </section>
-                    <aside className="reading-side">
-                      <section className="digest">
-                        <span className="eyebrow">THE BIG PICTURE</span>
-                        <h2>這一輪的綜合筆記</h2>
-                        <p className="preserve">
-                          {last?.report ||
-                            "把分散的消息連成脈絡。第一輪分析完成後，這裡會整理新線索、矛盾與值得再看的問題。"}
-                        </p>
-                        <small>資料截止 {time(last?.data_cutoff)}</small>
-                      </section>
-                      <section className="side-tracks">
-                        <div className="section-heading">
-                          <h2>值得延續的問題</h2>
-                          <span>↗</span>
-                        </div>
-                        {data.tracks
-                          .filter((t) => t.status === "candidate")
-                          .slice(0, 3)
-                          .map((t) => (
-                            <button
-                              className="candidate-link"
-                              key={t.id}
-                              onClick={() => {
-                                navigate("tracks");
-                                setTrack(t);
-                              }}
-                            >
-                              {t.title}
-                              <span>查看候選 →</span>
-                            </button>
-                          ))}
-                        {!data.tracks.some((t) => t.status === "candidate") && (
-                          <p>
-                            AI 提出的議題會先放在候選區，由你決定是否開始追蹤。
-                          </p>
-                        )}
-                      </section>
-                    </aside>
-                  </div>
+                              ))}
+                            {!data.tracks.some(
+                              (t) => t.status === "candidate",
+                            ) && (
+                              <p>
+                                AI
+                                提出的議題會先放在候選區，由你決定是否開始追蹤。
+                              </p>
+                            )}
+                          </section>
+                        </aside>
+                      </div>
+                    </>
+                  )}
                 </>
               )}
               {page === "tracks" && (
@@ -695,7 +805,23 @@ function App() {
           <p className="preserve">
             {analyses.get(selected.id)?.summary || "尚未分析"}
           </p>
-          <h3>RSS 提供內容</h3>
+          {analyses.get(selected.id)?.purpose_ids[0] && (
+            <button
+              onClick={() =>
+                startTracking({
+                  purpose_id: analyses.get(selected.id)!.purpose_ids[0],
+                  title: selected.title,
+                  excerpt: analyses.get(selected.id)?.summary || "",
+                  report: selected.title,
+                  published_at: selected.collected_at,
+                  evidence_ids: [selected.id],
+                })
+              }
+            >
+              ＋ 加入延續追蹤
+            </button>
+          )}
+          <h3>取得的來源文字</h3>
           <p className="preserve">{selected.content || "僅取得標題"}</p>
           <a href={safeUrl(selected.url)} target="_blank" rel="noreferrer">
             開啟原文 ↗
@@ -707,6 +833,80 @@ function App() {
             }
             save={(note) => articleState(selected.id, { note })}
           />
+        </Modal>
+      )}
+      {trackingDraft && (
+        <Modal
+          title="加入延續追蹤"
+          close={() => {
+            if (!trackingSaving) setTrackingDraft(null);
+          }}
+        >
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void saveTracking();
+            }}
+          >
+            <p>保留你感興趣的內容，下一輪分析會依追蹤問題尋找新進展。</p>
+            <label>
+              追蹤名稱
+              <input
+                required
+                maxLength={200}
+                value={trackingDraft.title}
+                onChange={(e) =>
+                  setTrackingDraft({ ...trackingDraft, title: e.target.value })
+                }
+              />
+            </label>
+            <label>
+              想持續關注的問題
+              <textarea
+                required
+                rows={4}
+                value={trackingDraft.question}
+                onChange={(e) =>
+                  setTrackingDraft({
+                    ...trackingDraft,
+                    question: e.target.value,
+                  })
+                }
+              />
+            </label>
+            <p className="meta">
+              研究方向：
+              {data.purposes.find((p) => p.id === trackingDraft.purpose_id)
+                ?.name || "歷史研究方向"}
+            </p>
+            <details>
+              <summary>原始摘要與來源</summary>
+              <p>{trackingDraft.report}</p>
+              <p className="preserve">{trackingDraft.excerpt}</p>
+              {trackingDraft.evidence_ids.map((id) => {
+                const a = data.articles.find((a) => a.id === id);
+                return a ? (
+                  <p key={id}>
+                    <a href={safeUrl(a.url)} target="_blank" rel="noreferrer">
+                      {a.title} ↗
+                    </a>
+                  </p>
+                ) : null;
+              })}
+            </details>
+            {trackingError && <p role="alert">{trackingError}</p>}
+            <button
+              className="primary"
+              type="submit"
+              disabled={
+                trackingSaving ||
+                !trackingDraft.title.trim() ||
+                !trackingDraft.question.trim()
+              }
+            >
+              {trackingSaving ? "儲存中…" : "開始追蹤"}
+            </button>
+          </form>
         </Modal>
       )}
       {track && (

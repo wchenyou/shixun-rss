@@ -67,6 +67,11 @@ Inputs may be RSS text, retrieved pages, or explicitly labelled search-result ex
 INPUT:\n'''+json.dumps({'articles':[{**a,'content':a['content'][:2400]} for a in articles],'config':config},ensure_ascii=False)
         return self.execute(prompt,schema)[0]
 
+    def report(self,purpose,articles,config):
+        from .reports import report_prompt,validate_report
+        result,_=self.execute(report_prompt(purpose,articles,config),Path(__file__).with_name('report.schema.json').resolve())
+        return validate_report(result,purpose,articles)
+
     def discover(self, config):
         from .search import discovery_prompt, discovered_articles
         result,events=self.execute(discovery_prompt(config),Path(__file__).with_name('search.schema.json').resolve(),search=True)

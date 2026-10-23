@@ -36,6 +36,7 @@ def main():
   a={'id':stable_id(owner,'article'),'title':'測試來源：新工具公布可驗證的更新','url':'https://example.com/test','source_name':'驗證資料','content':'這是測試資料，不是新聞。','published_at':now(),'collected_at':now()}
   result={'report':'這是端到端測試筆記。','analyses':[{'article_id':a['id'],'summary':'測試摘要，附上來源。','relevance':'與技術研究方向相關','purpose_ids':[purpose]}],'candidates':[],
           'evaluations':[{'track_id':track,'summary':'本輪新增測試證據','change':'持續觀察','evidence_ids':[a['id']],'counter_evidence':'尚需真實使用資料','next_question':'下一次觀察實際採用情況'}]}
+  config['purpose_reports']=[{'purpose_id':purpose,'title':'測試方向整合報告','overview':'這是清楚標示的整合測試，不是正式新聞。','sections':[{'heading':'多來源脈絡與比較','paragraphs':['先讀分析，再依引用查看原文。'],'bullets':['資料不足須明確標示。'],'tables':[{'headers':['項目','判斷'],'rows':[['測試技術','仍待驗證']]}],'evidence_ids':[a['id']]}],'conclusion':'此結論僅供整合測試。','next_steps':['繼續驗證實際採用。'],'limitations':['測試資料非真實市場數據。'],'evidence_ids':[a['id']]}]
   payload=build_payload(result,[a],config,str(uuid.uuid4()),owner,cloud.node,[])
   # Pause while analysis is running. Publishing must not reactivate.
   request('/rest/v1/tracks?id=eq.'+track,{'status':'paused'},sessions[0]['access_token'],'PATCH')
