@@ -137,7 +137,8 @@ class Runner:
             batch=self.store.pending()
             snapshot={**config,'_config_hash':config_hash(config),'_started_at':now(),
                       '_execution':{'collector':'local Codex CLI live web search' if self.web_search else 'local Python RSS',
-                                    'model':getattr(self.codex,'model','unknown'),'web_search':self.web_search,'rss':self.rss}}
+                                    'model':getattr(self.codex,'model','unknown'),
+                                    'reasoning_effort':getattr(self.codex,'reasoning_effort','unknown'),'web_search':self.web_search,'rss':self.rss}}
             snapshot['history']=self.cloud.history()
             # Keep all candidate identities, cap active context explicitly.
             snapshot['_active_track_total']=sum(t['status']=='active' for t in snapshot['tracks'])

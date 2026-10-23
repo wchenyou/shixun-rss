@@ -13,7 +13,7 @@
 
 實際路徑：本機 Python → 本機 Codex CLI → OpenAI 雲端模型及即時網路搜尋 → Supabase → Vercel。
 使用 Codex 的 ChatGPT 登入，不操作使用者原本的 ChatGPT 對話，不自動改用付費 API。
-macOS 優先選用 ChatGPT.app 內附的新版 CLI；可透過 CODEX_BIN 覆寫。預設模型為 gpt-6.1-sol，仍需帳號實測可用。
+macOS 優先選用 ChatGPT.app 內附的新版 CLI；可透過 CODEX_BIN 覆寫。預設模型為 gpt-5.6-terra，推理強度 medium；可由 CODEX_MODEL 與 CODEX_REASONING_EFFORT 覆寫。
 
 `COLLECTION_MODE=web` 為預設；`hybrid` 附加 RSS（每源最多 10 篇）；`rss` 保留原訂閱模式。
 搜尋結果與設定雜湊會存入本機 SQLite，預設六小時內重用，設定變更時重新搜尋，避免恢復監控重複消耗模型額度。

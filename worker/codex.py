@@ -16,10 +16,11 @@ def safe_env():
     return {k:v for k,v in os.environ.items() if k in ('PATH','HOME','USER','TMPDIR','LANG','CODEX_HOME')}
 
 class Codex:
-    def __init__(self, binary=None, model=None):
+    def __init__(self, binary=None, model=None, reasoning_effort=None):
         bundled=Path("/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex")
         self.binary=binary or os.environ.get("CODEX_BIN") or (str(bundled) if bundled.is_file() else "codex")
-        self.model=model or os.environ.get('CODEX_MODEL','gpt-6.1-sol')
+        self.model=model or os.environ.get('CODEX_MODEL','gpt-5.6-terra')
+        self.reasoning_effort=reasoning_effort or os.environ.get('CODEX_REASONING_EFFORT','medium')
     def quota(self):
         process=subprocess.Popen([self.binary,'app-server'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,env=safe_env(),bufsize=0)
         selector=selectors.DefaultSelector()
@@ -74,7 +75,7 @@ INPUT:\n'''+json.dumps({'articles':[{**a,'content':a['content'][:2400]} for a in
         with tempfile.TemporaryDirectory(prefix='shixun-analysis-') as directory:
             output=Path(directory)/'result.json'
             args=[self.binary,'exec','--model',self.model,'--ignore-user-config','--ephemeral','--skip-git-repo-check','--sandbox','read-only',
-                  '-c','features.shell_tool=false','-c','web_search="live"' if search else 'web_search="disabled"','--json','--output-schema',str(schema),'-o',str(output),'-']
+                  '-c','features.shell_tool=false','-c','model_reasoning_effort='+json.dumps(self.reasoning_effort),'-c','web_search="live"' if search else 'web_search="disabled"','--json','--output-schema',str(schema),'-o',str(output),'-']
             try:
                 result=subprocess.run(args,input=prompt,text=True,capture_output=True,cwd=directory,env=safe_env(),timeout=600)
             except subprocess.TimeoutExpired as e: raise CodexFailure('Analysis timed out') from e
