@@ -14,6 +14,7 @@ const labels: Record<string, string> = {
   running: "分析中",
   claude_running: "Claude 分析整理中",
   searching: "全網搜尋中",
+  claude_searching: "Claude 全網搜尋中",
   search_failed: "網路搜尋失敗",
   model_failed: "模型執行失敗",
   fallback_searching: "Claude 備援搜尋中",
@@ -298,7 +299,7 @@ function App() {
           </div>
         </div>
       </aside>
-      <main id="main">
+      <main id="main" tabIndex={-1}>
         <header className="topbar">
           <span>
             閱讀 /{" "}
@@ -639,10 +640,9 @@ function App() {
               {page === "settings" && (
                 <>
                   <div className="alert">
-                    拾訊會依研究方向主動搜尋公開網路，不限於下列 RSS 網站。RSS
-                    是可選的補充來源，需主機啟用混合模式才會讀取。搜尋與分析優先由本機
-                    Codex 執行，額度不足時改用本機 Claude Haiku 5.5。
-                    電腦需要開機並連網；原監控時間的文字紀錄不會自動建立排程。
+                    研究方向與 RSS 來源各自依每日時間觸發，皆使用台北時間。
+                    搜尋與分析預設使用 Claude Haiku 5.5。主機每分鐘檢查排程，
+                    需要電腦開機、登入並連網；錯過時間會在主機恢復後補跑當日工作。
                   </div>
                   <div className="settings-grid">
                     {(["purposes", "sources"] as const).map((kind) => (
@@ -674,7 +674,9 @@ function App() {
                               </p>
                               <small>
                                 v{item.version} ·{" "}
-                                {item.enabled ? "啟用中" : "已暫停"}
+                                {item.enabled ? "啟用中" : "已暫停"} · 每日{" "}
+                                {item.daily_time?.slice(0, 5) || "09:00"}
+                                （台北）
                               </small>
                             </div>
                             <button
@@ -700,8 +702,8 @@ function App() {
                     <section className="settings-section">
                       <h2>執行節點</h2>
                       <p>
-                        本機執行端優先使用 Codex Terra；額度不足時改用 Claude
-                        Haiku 5.5，完成搜尋與分析後寫入 Supabase。
+                        本機執行端預設使用 Claude Haiku 5.5 搜尋與分析，
+                        依每日時間觸發，完成後寫入 Supabase。
                       </p>
                       {last?.config_snapshot._execution && (
                         <p>
@@ -720,7 +722,7 @@ function App() {
                         </dd>
                         <dt>最近回報</dt>
                         <dd>{time(node?.last_seen)}</dd>
-                        <dt>額度檢查</dt>
+                        <dt>執行檢查</dt>
                         <dd>{time(node?.last_check_at)}</dd>
                         <dt>預計再次檢查</dt>
                         <dd>
@@ -772,6 +774,25 @@ function App() {
                 </>
               )}
             </>
+          )}
+          {(page === "read" || page === "saved") && ownerId && (
+            <button
+              className="back-to-top"
+              aria-label="回到頂端"
+              onClick={() => {
+                window.scrollTo({
+                  top: 0,
+                  behavior: window.matchMedia(
+                    "(prefers-reduced-motion: reduce)",
+                  ).matches
+                    ? "instant"
+                    : "smooth",
+                });
+                document.getElementById("main")?.focus({ preventScroll: true });
+              }}
+            >
+              ↑ 回到頂端
+            </button>
           )}
           <footer>
             <span>拾訊 SHIXUN</span>
@@ -988,6 +1009,7 @@ function App() {
                     [editing.kind === "purposes" ? "description" : "url"]:
                       f.get("detail"),
                     enabled: f.get("enabled") === "on",
+                    daily_time: f.get("daily_time"),
                   },
                   editing.value?.id,
                 );
@@ -1034,6 +1056,16 @@ function App() {
                   }
                 />
               )}
+            </label>
+            <label>
+              每日觸發時間（台北）
+              <input
+                name="daily_time"
+                type="time"
+                required
+                step="60"
+                defaultValue={editing.value?.daily_time?.slice(0, 5) || "09:00"}
+              />
             </label>
             <label className="checkbox">
               <input

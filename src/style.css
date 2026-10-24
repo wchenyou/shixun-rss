@@ -1016,3 +1016,6 @@ h1 { text-wrap: balance; }
  .direction-tabs { gap:8px; }
  .direction-tabs button { padding:9px 12px; }
 }
+
+.back-to-top { position:fixed; right:24px; bottom:24px; z-index:30; background:var(--green, #234d3c); color:white; border-radius:999px; padding:12px 18px; box-shadow:0 4px 16px #0002; }
+@media(max-width:640px) { .back-to-top { right:14px; bottom:14px; } }

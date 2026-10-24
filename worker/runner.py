@@ -126,8 +126,8 @@ class Runner:
             try:
                 articles=parse_feed(self.fetcher(source['url']),source,self.cloud.owner)
                 self.store.add(articles[:10] if self.web_search else articles)
-                source_results.append({'name':source['name'],'ok':True,'count':len(articles)})
-            except Exception as e:source_results.append({'name':source['name'],'ok':False,'count':0,'error':type(e).__name__})
+                source_results.append({'source_id':source['id'],'name':source['name'],'ok':True,'count':len(articles)})
+            except Exception as e:source_results.append({'source_id':source['id'],'name':source['name'],'ok':False,'count':0,'error':type(e).__name__})
         self.store.set('source_results',source_results)
         if not any(p['enabled'] for p in config['purposes']):
             self.status('idle','Configure at least one enabled purpose');return
@@ -139,16 +139,22 @@ class Runner:
         may_recheck=bool(primary_reset and self.clock()>=primary_reset)
         if retry and self.clock()<retry and not (self.fallback and (self.store.get('wait_status')=='waiting_quota' or may_recheck)):
             self.status(self.store.get('wait_status','waiting_quota'),self.store.get('wait_reason'),retry);return
-        cached=self.store.get('codex_wait',{})
-        try:
-            if cached.get('next_retry_at',0) and self.clock()<cached['next_retry_at']:
-                q=cached
-            else:
-                q=quota_state(self.codex.quota(),self.buckets,self.store.get('attempt',0),self.clock())
-                self.store.set('last_check_at',now())
-                self.store.set('codex_wait',q if q['status']=='waiting_quota' else {})
-        except CodexFailure as e:q={'status':e.code,'next_retry_at':self.clock()+3600,'reason':str(e)}
-        except Exception:q={'status':'quota_unknown','next_retry_at':self.clock()+3600,'reason':'Quota query failed'}
+        if getattr(self.codex,'provider','codex')=='claude':
+            try:
+                self.codex.ensure_ready()
+                q={'status':'available'};self.store.set('last_check_at',now())
+            except CodexFailure as e:q={'status':e.code,'next_retry_at':self.clock()+900,'reason':str(e)}
+        else:
+            cached=self.store.get('codex_wait',{})
+            try:
+                if cached.get('next_retry_at',0) and self.clock()<cached['next_retry_at']:
+                    q=cached
+                else:
+                    q=quota_state(self.codex.quota(),self.buckets,self.store.get('attempt',0),self.clock())
+                    self.store.set('last_check_at',now())
+                    self.store.set('codex_wait',q if q['status']=='waiting_quota' else {})
+            except CodexFailure as e:q={'status':e.code,'next_retry_at':self.clock()+3600,'reason':str(e)}
+            except Exception:q={'status':'quota_unknown','next_retry_at':self.clock()+3600,'reason':'Quota query failed'}
         self.active=self.codex
         if q['status']=='waiting_quota' and self.fallback:
             try:self.activate_fallback()
@@ -161,8 +167,8 @@ class Runner:
         if self.web_search:
             stamp=self.store.get('web_search_cache',{})
             digest=config_hash(config)
-            if stamp.get('config_hash')!=digest or self.clock()-stamp.get('at',0)>=self.search_interval:
-                self.status('fallback_searching' if self.active is self.fallback else 'searching')
+            if stamp.get('config_hash')!=digest or self.clock()-stamp.get('at',0)>=self.search_interval or stamp.get('provider',{}).get('model')!=getattr(self.active,'model','unknown'):
+                self.status('claude_searching' if getattr(self.active,'provider','codex')=='claude' and self.active is not self.fallback else 'fallback_searching' if self.active is self.fallback else 'searching')
                 try:
                     discovered,coverage=self.invoke('discover',{**config,'_owner_id':self.cloud.owner})
                     self.store.add(discovered)
@@ -246,10 +252,12 @@ def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--collection',choices=('web','hybrid','rss'),default=None,help='Default: web; hybrid also reads RSS')
     parser.add_argument('--refresh-reports',action='store_true',help='Rebuild detailed reports using the latest local evidence')
+    parser.add_argument('--scheduled',action='store_true',help='Run due daily source/direction schedules and recover unfinished work')
+    parser.add_argument('--schedule-preview',action='store_true',help='Show due schedule counts without model execution')
     parser.add_argument('--once',action='store_true',help='Run one collection/analysis batch')
     parser.add_argument('--monitor',action='store_true',help='Run due recovery only; no regular schedule')
     args=parser.parse_args()
-    if not args.once and not args.monitor:parser.error('Choose --once or --monitor')
+    if not (args.once or args.monitor or args.scheduled or args.schedule_preview):parser.error('Choose --once, --monitor or --scheduled')
     env_file=Path(__file__).resolve().parent.parent/'.env.worker'
     if env_file.exists():
         for line in env_file.read_text().splitlines():
@@ -273,11 +281,24 @@ def main():
         analysis_provider=os.environ.get('ANALYSIS_PROVIDER','claude')
         if analysis_provider not in ('claude','codex'):parser.error('Invalid ANALYSIS_PROVIDER')
         analyzer=Claude() if analysis_provider=='claude' else None
-        fallback=Claude() if os.environ.get('CLAUDE_FALLBACK_ENABLED','0')=='1' else None
-        runner=Runner(store,cloud,Codex(),fallback=fallback,detailed_reports=True,analyzer=analyzer,buckets=tuple(os.environ.get('CODEX_LIMIT_IDS','codex').split(',')),
+        search_provider=os.environ.get('SEARCH_PROVIDER','claude')
+        if search_provider not in ('claude','codex'):parser.error('Invalid SEARCH_PROVIDER')
+        primary=Claude() if search_provider=='claude' else Codex()
+        fallback=Claude() if search_provider=='codex' and os.environ.get('CLAUDE_FALLBACK_ENABLED','0')=='1' else None
+        schedule=None
+        if args.scheduled or args.schedule_preview:
+            from .schedule import DailySchedule
+            schedule=DailySchedule(store,cloud)
+            if args.schedule_preview:
+                print(json.dumps(schedule.preview()));return
+            if not schedule.due:return
+            cloud=schedule.cloud
+            mode='hybrid' if schedule.purpose_ids and schedule.source_ids else 'web' if schedule.purpose_ids else 'rss'
+        runner=Runner(store,cloud,primary,fallback=fallback,detailed_reports=True,analyzer=analyzer,buckets=tuple(os.environ.get('CODEX_LIMIT_IDS','codex').split(',')),
                       web_search=mode!='rss',rss=mode!='web',search_interval=int(os.environ.get('WEB_SEARCH_INTERVAL_SECONDS','21600')))
         try:runner.cycle()
         except Exception as e:runner.status('failed','Worker failure: '+type(e).__name__)
+        if schedule:schedule.finish()
         print(json.dumps(store.get('status'),ensure_ascii=False))
         store.db.close()
 if __name__=='__main__':main()

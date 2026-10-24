@@ -11,18 +11,18 @@
 預設執行 `python3 -m worker.runner --once --collection web`，依所有啟用的研究方向與正式追蹤搜尋公開網路，不受 RSS 清單限制。
 每輪最多選 30 個網址，必須能在實際搜尋工具結果找到；Python 擷取公開原頁，失敗則保留工具回傳的搜尋摘要並標示非全文。出版日期無法確認時保持空值，不把搜尋時間當作出版時間。
 
-實際路徑：本機 Python → 本機 Codex CLI → OpenAI 雲端模型及即時網路搜尋 → Supabase → Vercel。
-使用 Codex 的 ChatGPT 登入，不操作使用者原本的 ChatGPT 對話，不自動改用付費 API。
-macOS 優先選用 ChatGPT.app 內附的新版 CLI；可透過 CODEX_BIN 覆寫。預設模型為 gpt-5.6-terra，推理強度 medium；可由 CODEX_MODEL 與 CODEX_REASONING_EFFORT 覆寫。
+實際路徑：本機 Python → 本機 Claude Code CLI → Anthropic 雲端模型及即時網路搜尋 → Supabase → Vercel。
+預設使用 Claude 訂閱登入，不自動改用付費 API。只有顯式設定 SEARCH_PROVIDER=codex 才使用 Codex 的 ChatGPT 登入。
+macOS 優先選用 ChatGPT.app 內附的新版 CLI；可透過 CODEX_BIN 覆寫。Codex 選用設定為 gpt-5.6-terra、medium；Claude 預設為 claude-haiku-5-5、medium。
 
 `COLLECTION_MODE=web` 為預設；`hybrid` 附加 RSS（每源最多 10 篇）；`rss` 保留原訂閱模式。
 搜尋結果與設定雜湊會存入本機 SQLite，預設六小時內重用，設定變更時重新搜尋，避免恢復監控重複消耗模型額度。
-`WEB_SEARCH_INTERVAL_SECONDS=21600` 控制重新搜尋間距，並非排程。網站上記錄的監控時間也不會自行建立 launchd 排程。
+`WEB_SEARCH_INTERVAL_SECONDS=21600` 控制重新搜尋間距，並非排程。每日觸發由獨立的 --scheduled 模式依 daily_time 執行。
 主機必須開機連網；Vercel 不會喚醒這台電腦。公開搜尋仍受搜尋索引、付費牆及網站存取限制，並非涵蓋所有網頁。
 
 ## 分析模型與搜尋備援
 分析、延續追蹤評估及詳細報告預設使用本機 Claude Code 的 `claude-haiku-5-5`，推理強度 medium，使用 Claude 訂閱登入。`ANALYSIS_PROVIDER=claude` 控制此設定；設為 `codex` 可恢復跟隨搜尋端模型。
-搜尋正常使用 Codex Terra medium；只有確定 Codex 額度不足（配額已滿或產生結構化 quota error）才改用 Claude 搜尋。搜尋與分析分開路由，Codex 重置後只切回搜尋，分析仍使用 Claude。
+搜尋與分析預設均為 Claude Haiku 5.5 medium，分別由 SEARCH_PROVIDER=claude、ANALYSIS_PROVIDER=claude 控制。只有顯式改為 Codex 搜尋時才啟用既有 Codex 額度不足備援機制。Claude 模式不查詢 Codex 額度。
 登入失敗、額度未知、無效輸出與其他程式錯誤不會誤觸備援。若搜尋後整理才遇到額度不足，沿用已收集的文章；上傳失敗只重傳，不呼叫模型重做。
 執行紀錄會保存搜尋與分析各自的模型，包含混用情況。已知 Codex 重置時間會保存，重置前不反覆呼叫 Codex，到期後重新檢查並優先切回。
 
@@ -61,15 +61,21 @@ npm test
 網站不寄送 Email、不建立登入 session，也不讀取瀏覽器舊登入紀錄。管理員在 workspace_access 寫入 singleton=true 與既有 owners 的 owner_id，指定公開的閱讀空間；此列不能由瀏覽器修改。既有 Auth 擁有者 ID 保留供主機關聯資料使用。
 
 ## 執行端
-1. 在正式主機安裝 Python 3.9+ 與 Codex CLI，執行 `codex login`，使用自己的 ChatGPT 登入。
+1. 在正式主機安裝 Python 3.9+、Claude Code CLI，完成 Claude 訂閱登入。Codex CLI 為可選。
 2. 複製專案、建立僅主機可讀的 `.env.worker`（chmod 600），填入 `.env.example` 的 worker 欄位。
 3. `python3 -m worker.runner --once`：收集一次，最多分析 40 篇、每篇 2,400 字元。
 4. `python3 -m worker.runner --monitor`：恢復未完成工作；沒有積壓工作時不啟動新分析。
-5. `python3 -m worker.install --interval-minutes 60` 只產生 launchd 檔案，請依輸出確認時間後安裝。
+5. `python3 -m worker.install --daily --enable` 安裝每日排程：每分鐘讀取雲端 daily_time，執行到期方向的全網搜尋與到期 RSS 收集；同日成功項目不重複執行。
+6. `python3 -m worker.runner --schedule-preview` 只列出到期項目數，不呼叫模型。
 
 `.env.worker` 與 `.data` 禁止提交。服務金鑰略過 RLS，是受控主機的高權限憑證；不能放進 VITE_ 變數或網頁。
 全網模式先呼叫搜尋，再進行批次分析及每個啟用方向各一次詳細報告整理；同一主機正常工作與恢復監控共用 flock，額度等待會釋放鎖。
-未指定正式主機及排程前，不會自行安裝常駐服務。
+本機已啟用 com.shixun.daily。執行程式、CLI、資料與私密環境設定安裝至 ~/Library/Application Support/Shixun，避免背景程序不能存取 Documents 的問題。更新 worker 後需在沒有工作執行時重新安裝；原始碼推送不會更新這台主機的安裝副本。
+
+## 每日時間與閱讀操作
+「方向與來源」的每個項目均可編輯每日觸發時間（Asia/Taipei）。未指定項目預設 09:00；既有研究方向沿用已知的 08:00、08:30、09:30、21:30。RSS 每個來源各自到期才抓取，不要求手動啟用 hybrid；手動 --once 仍遵守 COLLECTION_MODE。
+主機需開機、登入及連網；恢復後補跑當天已到期項目，不補跑所有歷史日期。工作依序處理，前一輪未結束可能延後新項目。失敗保存工作並退避重試；部分成功不會將失敗來源標成完成。
+閱讀頁右下角「↑ 回到頂端」可一鍵返回頁首，並遵循減少動畫偏好。
 
 ## 可靠性
 - 啟動分析前讀取雲端設定，失敗即停止新分析。

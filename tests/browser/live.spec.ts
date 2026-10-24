@@ -19,6 +19,7 @@ test("anonymous reading, bookmark persistence and tracking", async ({
   page.on("request", (r) => {
     if (r.url().includes("/auth/v1/")) authCalls.push(r.url());
   });
+  const sourceName = title + "-排程來源";
   let articleId: string | undefined;
   let originalSaved = false;
   try {
@@ -95,13 +96,47 @@ test("anonymous reading, bookmark persistence and tracking", async ({
         () => document.documentElement.scrollWidth <= innerWidth,
       ),
     ).toBeTruthy();
+    await page.evaluate(() =>
+      window.scrollTo(0, document.documentElement.scrollHeight),
+    );
+    await page.getByRole("button", { name: "回到頂端", exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
     await page.screenshot({
       path: "test-results/public-mobile.png",
       fullPage: true,
     });
+    await page.getByRole("button", { name: /方向與來源/ }).click();
+    await page
+      .locator(".settings-section")
+      .filter({
+        has: page.getByRole("heading", { name: "RSS 來源", exact: true }),
+      })
+      .getByRole("button", { name: /新增/ })
+      .click();
+    await page.getByLabel("名稱", { exact: true }).fill(sourceName);
+    await page
+      .getByLabel("RSS / Atom 網址")
+      .fill("https://example.com/verification-feed");
+    await page.getByLabel("每日觸發時間（台北）").fill("23:58");
+    await page.getByRole("button", { name: "儲存設定", exact: true }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await page.reload();
+    await page.getByRole("button", { name: /方向與來源/ }).click();
+    const sourceCard = page
+      .locator(".setting-item")
+      .filter({ hasText: sourceName });
+    await expect(sourceCard).toContainText("每日 23:58");
     expect(errors).toEqual([]);
     expect(authCalls).toEqual([]);
   } finally {
+    expect(
+      (
+        await request.delete(
+          rest + "sources?name=eq." + encodeURIComponent(sourceName),
+          { headers },
+        )
+      ).ok(),
+    ).toBeTruthy();
     if (articleId)
       await request.post(rest + "rpc/set_article_state", {
         headers,

@@ -69,3 +69,9 @@
 - 真實 Supabase 隔離帳號測試通過：其他 owner 不可被 anon 讀寫、配置不可改寫、AI 插入與發布遭拒；原子發布、冪等與追蹤暫停保護仍通過。
 - 46 項 Python 測試通過。瀏覽器新增免登入載入、錯誤重試與手機版驗證；live 讀寫需 TEST_ALLOW_WRITES=1 明確啟用，會清除測試追蹤並還原收藏。
 - 歷史章節的私人登入權限描述只反映當時版本，現以本節與架構文件為準。
+
+## 2026-10-24 每日排程、Claude 預設與回到頂端
+- 53 項 Python 測試通過，涵蓋台北日期換日、分項時間、暫停、同日冪等、時間變更、失敗不記成功、部分來源失敗重試、Claude 搜尋不呼叫 Codex 額度查詢。
+- 真實 Supabase 瀏覽器驗證通過：新增來源每日時間儲存、重載顯示、手機一鍵回到頂端，以及既有免登入閱讀與追蹤；測試來源與追蹤已清除，收藏已還原。
+- 本機 SEARCH_PROVIDER 與 ANALYSIS_PROVIDER 均為 claude，模型 Haiku 5.5 medium。
+- 已載入每分鐘 launchd 服務；首次 Documents 路徑無法載入 worker，已改為安裝到 Application Support/Shixun。背景服務實際進入 claude_searching，無啟動錯誤。尚未驗證重新開機／睡眠恢復的實體行為。

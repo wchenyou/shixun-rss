@@ -3,6 +3,7 @@ export interface Purpose {
   name: string;
   description: string;
   enabled: boolean;
+  daily_time: string;
   version: number;
 }
 export interface Source {
@@ -10,6 +11,7 @@ export interface Source {
   name: string;
   url: string;
   enabled: boolean;
+  daily_time: string;
   version: number;
 }
 export interface Article {
