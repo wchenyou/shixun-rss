@@ -972,14 +972,6 @@ h1 { text-wrap: balance; }
   line-height: 1.7;
 }
 
-.reading-modes { margin: 28px 0; }
-.report-navigation { display:flex; align-items:end; justify-content:space-between; gap:24px; margin:34px 0 24px; }
-.report-navigation h2 { font-size:26px; margin:10px 0; }
-.report-navigation p { color:var(--muted); font-size:13px; }
-.report-navigation label { min-width:240px; font-size:12px; }
-.direction-tabs { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:32px; }
-.direction-tabs button { border:1px solid var(--line); border-radius:24px; padding:10px 16px; text-align:left; font-size:12px; }
-.direction-tabs button.chosen { background:#244b37; color:white; border-color:#244b37; }
 .research-report { max-width:860px; margin:0 auto; padding:36px 42px; border:1px solid var(--line); border-radius:16px; background:#fffefb; overflow-wrap:anywhere; }
 .research-report header h2 { font-size:30px; line-height:1.5; margin:18px 0; }
 .report-version { display:flex; gap:16px; flex-wrap:wrap; align-items:center; justify-content:space-between; font-size:11px; color:var(--muted); }
@@ -1006,16 +998,43 @@ h1 { text-wrap: balance; }
 .report-sources a { color:#355f43; text-decoration:underline; }
 .report-sources small { display:block; color:var(--muted); font-size:11px; line-height:1.8; }
 @media(max-width:700px) {
- .report-navigation { display:block; }
- .report-navigation label { margin-top:20px; }
  .research-report { padding:22px 18px; border-radius:10px; }
  .research-report header h2 { font-size:24px; }
  .report-section h3 { font-size:19px; }
  .report-version label { flex-wrap:wrap; }
  .report-overview { padding:16px; }
- .direction-tabs { gap:8px; }
- .direction-tabs button { padding:9px 12px; }
 }
 
 .back-to-top { position:fixed; right:24px; bottom:24px; z-index:30; background:var(--green, #234d3c); color:white; border-radius:999px; padding:12px 18px; box-shadow:0 4px 16px #0002; }
 @media(max-width:640px) { .back-to-top { right:14px; bottom:14px; } }
+
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+.compact-content { padding-top:20px; }
+.compact-content .title-row { margin:0 0 18px; align-items:center; }
+.compact-content .title-row h1 { font-size:23px; line-height:1.3; margin:0; }
+.compact-content .title-row .secondary { margin:0; padding:8px 12px; }
+.reading-view-select { display:block; max-width:180px; margin:0 0 14px; }
+.reading-view-select select { margin:0; font-size:13px; }
+.report-search { display:block; margin:0 0 18px; }
+.report-search input { margin:0; }
+.report-card-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
+.report-card { min-width:0; background:white; border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+.report-card > button { width:100%; height:100%; display:flex; flex-direction:column; align-items:stretch; gap:14px; padding:24px; text-align:left; color:var(--ink); background:transparent; border:0; border-radius:12px; }
+.report-card > button:hover { background:#f4f6f0; }
+.report-card > button:focus-visible { outline:3px solid #52735e; outline-offset:-3px; }
+.report-card-direction { font-size:12px; color:var(--muted); }
+.report-card-title { font-family:var(--serif); font-size:21px; font-weight:600; line-height:1.55; }
+.report-card-summary { color:#59645d; font-size:14px; line-height:1.85; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.report-card-footer { margin-top:auto; display:flex; justify-content:space-between; align-items:center; gap:12px; font-size:11px; color:var(--muted); }
+.report-card-footer > span { flex-shrink:0; color:#355f43; }
+.report-back { margin:0 0 18px; font-size:14px; color:#355f43; }
+.settings-help { margin:0 0 18px; font-size:12px; color:var(--muted); }
+.settings-help summary { cursor:pointer; }
+@media(max-width:640px) {
+ .compact-content { padding-top:16px; }
+ .compact-content .title-row h1 { font-size:21px; }
+ .report-card-grid { grid-template-columns:1fr; gap:14px; }
+ .report-card > button { padding:20px; gap:10px; }
+ .report-card-title { font-size:19px; }
+ .report-card-footer { font-size:10px; }
+}

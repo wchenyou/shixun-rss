@@ -240,11 +240,11 @@ function App() {
     setSelected(null);
   };
   const heading: Record<string, string> = {
-    read: "留意新訊，延續思考。",
-    saved: "把值得重讀的，留下來。",
-    tracks: "讓問題，持續有進展。",
-    settings: "為你的好奇，設定方向。",
-    status: "每一份更新，都有跡可循。",
+    read: "閱讀",
+    saved: "收藏",
+    tracks: "延續追蹤",
+    settings: "方向與來源",
+    status: "運作狀態",
   };
   return (
     <div className="shell">
@@ -317,8 +317,7 @@ function App() {
             ASIA / TAIPEI <i>✳</i>
           </span>
         </header>
-        <div className="content">
-          <div className="eyebrow">YOUR DAILY SIGNAL</div>
+        <div className="content compact-content">
           <div className="title-row">
             <h1>{heading[page]}</h1>
             <button
@@ -329,7 +328,6 @@ function App() {
               ↻ {busy ? "讀取中" : "重新整理"}
             </button>
           </div>
-          <p className="intro">從每天的資訊裡，拾起與你有關的線索。</p>
           {error && (
             <div className="alert error" role="alert">
               {error}{" "}
@@ -351,34 +349,29 @@ function App() {
             </div>
           ) : (
             <>
-              <section className="summary-bar" aria-label="資料狀態">
-                <div>
-                  <span>最近成功發布</span>
-                  <strong>{time(last?.published_at)}</strong>
-                </div>
-                <div>
-                  <span>未分析文章</span>
-                  <strong>
-                    {node?.pending_articles ?? 0}
-                    <small> 篇</small>
-                  </strong>
-                </div>
-                <div>
-                  <span>正式追蹤</span>
-                  <strong>
-                    {data.tracks.filter((t) => t.status === "active").length}
-                    <small> 項</small>
-                  </strong>
-                </div>
-                <p>
-                  {node?.status === "waiting_quota"
-                    ? "額度等待中，先前成果仍可閱讀。"
-                    : last
-                      ? "閱讀已發布內容，主機完成搜尋與分析後會發布新內容。"
-                      : "設定研究方向，等待主機搜尋並發布第一份內容。"}
-                </p>
-              </section>
-              {stale && (
+              {page === "status" && (
+                <section className="summary-bar" aria-label="資料狀態">
+                  <div>
+                    <span>最近成功發布</span>
+                    <strong>{time(last?.published_at)}</strong>
+                  </div>
+                  <div>
+                    <span>未分析文章</span>
+                    <strong>
+                      {node?.pending_articles ?? 0}
+                      <small> 篇</small>
+                    </strong>
+                  </div>
+                  <div>
+                    <span>正式追蹤</span>
+                    <strong>
+                      {data.tracks.filter((t) => t.status === "active").length}
+                      <small> 項</small>
+                    </strong>
+                  </div>
+                </section>
+              )}
+              {stale && page === "status" && (
                 <div className="alert">
                   設定已更新，等待下次分析。以下報告保留原有設定版本。
                 </div>
@@ -386,24 +379,17 @@ function App() {
               {(page === "read" || page === "saved") && (
                 <>
                   {page === "read" && (
-                    <div
-                      className="tabs reading-modes"
-                      role="group"
-                      aria-label="閱讀模式"
-                    >
-                      <button
-                        className={readingMode === "reports" ? "chosen" : ""}
-                        onClick={() => setReadingMode("reports")}
+                    <label className="reading-view-select">
+                      <span className="sr-only">閱讀內容</span>
+                      <select
+                        aria-label="閱讀內容"
+                        value={readingMode}
+                        onChange={(e) => setReadingMode(e.target.value)}
                       >
-                        方向分析報告
-                      </button>
-                      <button
-                        className={readingMode === "sources" ? "chosen" : ""}
-                        onClick={() => setReadingMode("sources")}
-                      >
-                        來源資料
-                      </button>
-                    </div>
+                        <option value="reports">分析摘要</option>
+                        <option value="sources">來源資料</option>
+                      </select>
+                    </label>
                   )}
                   {page === "read" && readingMode === "reports" ? (
                     <ReportReader
@@ -639,11 +625,13 @@ function App() {
               )}
               {page === "settings" && (
                 <>
-                  <div className="alert">
-                    研究方向與 RSS 來源各自依每日時間觸發，皆使用台北時間。
-                    搜尋與分析預設使用 Claude Haiku 5.5。主機每分鐘檢查排程，
-                    需要電腦開機、登入並連網；錯過時間會在主機恢復後補跑當日工作。
-                  </div>
+                  <details className="settings-help">
+                    <summary>排程說明</summary>
+                    <p>
+                      各項目依台北時間觸發，搜尋與分析使用 Claude Haiku
+                      5.5。主機需開機、登入及連網。
+                    </p>
+                  </details>
                   <div className="settings-grid">
                     {(["purposes", "sources"] as const).map((kind) => (
                       <section className="settings-section" key={kind}>

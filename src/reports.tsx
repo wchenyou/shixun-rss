@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Article, Purpose, PurposeReport, Run } from "./types";
 
 const date = (value: string | null) =>
@@ -52,9 +52,25 @@ export function ReportReader({
       ) ||
       names.get(id)?.includes(query),
   );
-  const selected = results.includes(direction) ? direction : results[0];
+  const selected = direction;
   const versions = entries.filter((e) => e.report.purpose_id === selected);
   const current = versions.find((e) => e.run.id === version) || versions[0];
+  const listScroll = useRef(0);
+  const detailTitle = useRef<HTMLHeadingElement>(null);
+  const opened = useRef(false);
+  const openedId = useRef("");
+  useEffect(() => {
+    if (direction) {
+      opened.current = true;
+      window.scrollTo({ top: 0, behavior: "instant" });
+      detailTitle.current?.focus({ preventScroll: true });
+    } else if (opened.current) {
+      window.scrollTo({ top: listScroll.current, behavior: "instant" });
+      document
+        .getElementById("report-card-" + openedId.current)
+        ?.focus({ preventScroll: true });
+    }
+  }, [direction]);
   if (!entries.length)
     return (
       <section className="empty">
@@ -64,46 +80,69 @@ export function ReportReader({
         </p>
       </section>
     );
-  return (
-    <div className="report-reader">
-      <div className="report-navigation">
-        <div>
-          <span className="eyebrow">RESEARCH BRIEFINGS</span>
-          <h2>依方向，讀出完整脈絡。</h2>
-          <p>先讀整合分析，有興趣再沿著引用閱讀原文。</p>
-        </div>
-        <label>
-          搜尋方向與報告
+  if (!current)
+    return (
+      <section className="report-reader" aria-label="分析摘要卡片">
+        <label className="report-search">
+          <span className="sr-only">搜尋方向與報告</span>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜尋議題、公司或分析內容…"
+            placeholder="搜尋摘要…"
           />
         </label>
-      </div>
-      <div className="direction-tabs" role="group" aria-label="選擇報告方向">
-        {results.map((id) => (
-          <button
-            key={id}
-            aria-pressed={id === selected}
-            className={id === selected ? "chosen" : ""}
-            onClick={() => {
-              setDirection(id);
-              setVersion("");
-            }}
-          >
-            {names.get(id) || "歷史研究方向"}
-          </button>
-        ))}
-        {!results.length && <p>沒有符合的報告方向。</p>}
-      </div>
+        <div className="report-card-grid">
+          {results.map((id) => {
+            const entry = entries.find((e) => e.report.purpose_id === id)!;
+            return (
+              <article className="report-card" key={id}>
+                <button
+                  id={"report-card-" + id}
+                  aria-label={`閱讀報告：${names.get(id) || entry.report.title}`}
+                  onClick={() => {
+                    listScroll.current = window.scrollY;
+                    openedId.current = id;
+                    setDirection(id);
+                    setVersion("");
+                  }}
+                >
+                  <span className="report-card-direction">
+                    {names.get(id) || "歷史研究方向"}
+                  </span>
+                  <span className="report-card-title">
+                    {entry.report.title}
+                  </span>
+                  <span className="report-card-summary">
+                    {entry.report.overview}
+                  </span>
+                  <span className="report-card-footer">
+                    <time dateTime={entry.run.published_at || undefined}>
+                      {date(entry.run.published_at)}
+                    </time>
+                    <span>閱讀詳情 ↗</span>
+                  </span>
+                </button>
+              </article>
+            );
+          })}
+        </div>
+        {!results.length && <p className="empty">沒有符合的摘要。</p>}
+      </section>
+    );
+  return (
+    <div className="report-reader">
+      <button className="report-back" onClick={() => setDirection("")}>
+        ← 返回摘要
+      </button>
       {current && (
         <article className="research-report" aria-label="方向分析報告">
           <header>
             <div className="meta">
               {names.get(selected)} · 發布 {date(current.run.published_at)}
             </div>
-            <h2>{current.report.title}</h2>
+            <h2 tabIndex={-1} ref={detailTitle}>
+              {current.report.title}
+            </h2>
             <div className="report-version">
               <span>資料收集截止 {date(current.run.data_cutoff)}</span>
               <label>
@@ -252,9 +291,6 @@ export function ReportReader({
           )}
           <section className="report-sources">
             <h3>來源與延伸閱讀</h3>
-            <p>
-              以下連結對應本報告引用的資料。搜尋摘要與原頁擷取的範圍各有不同，來源日期不明時保留標示。
-            </p>
             <ol>
               {current.report.evidence_ids.map((id) => {
                 const a = sourceMap.get(id);

@@ -25,6 +25,13 @@ test("anonymous reading, bookmark persistence and tracking", async ({
   try {
     await page.goto("/");
     await expect(
+      page.getByRole("region", { name: "分析摘要卡片" }),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: /^閱讀報告：/ })
+      .first()
+      .click();
+    await expect(
       page.getByRole("article", { name: "方向分析報告" }),
     ).toBeVisible();
     await page
@@ -49,7 +56,7 @@ test("anonymous reading, bookmark persistence and tracking", async ({
     );
     await page.getByRole("button", { name: "關閉", exact: true }).click();
     await page.getByRole("button", { name: "◫ 閱讀", exact: true }).click();
-    await page.getByRole("button", { name: "來源資料", exact: true }).click();
+    await page.getByLabel("閱讀內容").selectOption("sources");
     const articleResponse = await request.get(
       rest +
         "articles?select=id&title=eq." +
@@ -87,6 +94,10 @@ test("anonymous reading, bookmark persistence and tracking", async ({
     );
     expect((await changedResponse.json())[0].saved).toBe(!originalSaved);
     await page.reload();
+    await page
+      .getByRole("button", { name: /^閱讀報告：/ })
+      .first()
+      .click();
     await expect(
       page.getByRole("article", { name: "方向分析報告" }),
     ).toBeVisible();
