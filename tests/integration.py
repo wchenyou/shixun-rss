@@ -60,7 +60,22 @@ def main():
   session_path=Path('.data/test-session.json');session_path.parent.mkdir(exist_ok=True)
   session_path.write_text(json.dumps(sessions[0]));session_path.chmod(0o600)
   print('PASS: RLS isolation, AI write denial, idempotent publish, atomic rollback, paused-track preservation.')
-  subprocess.run(['npx','playwright','test','tests/browser/live.spec.ts'],check=True)
+  public_key=json.loads(Path('src/public-config.json').read_text())['supabasePublishableKey']
+  def anonymous(path,body=None,method=None):
+   req=Request(url+'/rest/v1/'+path,data=json.dumps(body).encode() if body is not None else None,
+     headers={'apikey':public_key,'Content-Type':'application/json'},method=method)
+   with urlopen(req,timeout=30) as r:
+    raw=r.read();return json.loads(raw) if raw else None
+  assert anonymous('articles?select=id&owner_id=eq.'+owner)==[]
+  try:
+   anonymous('purposes',{'owner_id':owner,'name':'forbidden'},'POST')
+   raise AssertionError('Anonymous could write another owner')
+  except HTTPError as e:assert e.code in (401,403)
+  for path,body,method in [('workspace_access',{'owner_id':owner},'POST'),
+     ('analyses',{'owner_id':owner},'POST'),('rpc/publish_batch',{'payload':{}},'POST')]:
+   try:anonymous(path,body,method);raise AssertionError('Privileged anonymous write accepted')
+   except HTTPError as e:assert e.code in (401,403)
+  print('PASS: Anonymous owner isolation, public workspace configuration protection, AI write and publish denial.')
  finally:
   for owner in owners:
    for table in ('article_states','track_notes','evaluations','analyses','articles','tracks','runs','sources','purposes','nodes'):

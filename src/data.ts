@@ -1,9 +1,20 @@
 import publicConfig from "./public-config.json";
 import { createClient } from "@supabase/supabase-js";
 import type { Dataset } from "./types";
-const url = (import.meta.env.VITE_SUPABASE_URL || publicConfig.supabaseUrl),
-  key = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || publicConfig.supabasePublishableKey);
-export const supabase = url && key ? createClient(url, key) : null;
+const url = import.meta.env.VITE_SUPABASE_URL || publicConfig.supabaseUrl,
+  key =
+    import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    publicConfig.supabasePublishableKey;
+export const supabase =
+  url && key
+    ? createClient(url, key, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+        },
+      })
+    : null;
 export const emptyData: Dataset = {
   purposes: [],
   sources: [],
@@ -40,4 +51,15 @@ export async function fetchAll(): Promise<Dataset> {
     }),
   );
   return Object.fromEntries(entries) as unknown as Dataset;
+}
+
+export async function fetchWorkspaceOwner(): Promise<string> {
+  if (!supabase) throw new Error("尚未設定雲端連線");
+  const { data, error } = await supabase
+    .from("workspace_access")
+    .select("owner_id")
+    .eq("singleton", true)
+    .single();
+  if (error || !data) throw new Error("無法讀取閱讀空間，請稍後重試。");
+  return data.owner_id;
 }

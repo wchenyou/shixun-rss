@@ -62,3 +62,10 @@
 ## Claude 作為主要分析模型
 - 46 項 Python 測試及 TypeScript／正式建置通過，新增 Codex 搜尋與 Claude 分析分離、報告固定路由、Claude 失敗保留工作三項驗證。
 - 本機 .env.worker 已指定 ANALYSIS_PROVIDER=claude、claude-haiku-5-5、medium；公開範例與 CLI 預設一致。現有已發布報告保留原始模型紀錄，新一輪分析套用 Claude。
+
+## 2026-10-24 完全免登入
+- 依使用者明確選擇移除網站 Email 驗證、登入表單、session 檢查與登出；既有 owner 與工作端模型登入保留。
+- workspace_access 配置指定單一公開空間，RLS 限制 anon 只能讀寫此空間。已發布 AI 分析可讀，AI 表、工作端狀態、配置表與發布 RPC 不可由 anon 改寫。
+- 真實 Supabase 隔離帳號測試通過：其他 owner 不可被 anon 讀寫、配置不可改寫、AI 插入與發布遭拒；原子發布、冪等與追蹤暫停保護仍通過。
+- 46 項 Python 測試通過。瀏覽器新增免登入載入、錯誤重試與手機版驗證；live 讀寫需 TEST_ALLOW_WRITES=1 明確啟用，會清除測試追蹤並還原收藏。
+- 歷史章節的私人登入權限描述只反映當時版本，現以本節與架構文件為準。

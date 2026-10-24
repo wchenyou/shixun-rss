@@ -1,9 +1,9 @@
 # 拾訊 Shixun
-私人智慧情報閱讀器：搜尋公開網路 → 理解 → 延續追蹤。
+個人智慧情報閱讀器：搜尋公開網路 → 理解 → 延續追蹤。
 
 ## 架構
 - React + TypeScript + Vite，部署 Vercel；瀏覽器只讀取已發布的 Supabase 分析。
-- Supabase Auth Magic Link，僅預先授權帳號；所有私人資料以 RLS 隔離。
+- 網站完全免登入，使用 Supabase anon 權限讀寫指定的單一閱讀空間；RLS 仍限制資料範圍與 AI 發布權限。
 - Python 3.9+ 執行端負責 RSS/Atom、SQLite 暫存、Codex／Claude CLI 搜尋分析、驗證及原子發布。
 - 主機只主動連出，不需固定 IP 或公開家用主機連接埠。
 
@@ -41,10 +41,10 @@ Claude 搜尋僅開放 WebSearch／WebFetch，整理時關閉工具；停用使�
 正式網址：https://shixun-rss.vercel.app/
 GitHub main 推送後由 Vercel Git integration 自動部署。GitHub Actions 執行測試與建置。
 前端公開連線設定在 src/public-config.json，可用 VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY 覆寫。
-publishable key 可公開，私人資料由 Supabase Auth 與 RLS 控制；service_role 不可公開。
+publishable key 可公開；service_role 不可公開。任何知道網站網址的人均可讀取已發布內容、編輯方向／來源／追蹤與筆記；AI 分析、執行紀錄及 workspace_access 配置仍只允許主機或管理員寫入。
 
 ## 閱讀與延續追蹤
-登入後預設顯示「方向分析報告」：選擇研究方向，閱讀整合脈絡、比較表、風險、觀察點與引用來源；「來源資料」保留逐篇摘要、原頁文字及收藏。
+開啟網站預設顯示「方向分析報告」：選擇研究方向，閱讀整合脈絡、比較表、風險、觀察點與引用來源；「來源資料」保留逐篇摘要、原頁文字及收藏。
 在報告段落或「接下來值得觀察」按「延續追蹤」，修改名稱和希望持續關注的問題後按「開始追蹤」。逐篇摘要也有同樣入口。
 新項目直接進入追蹤中，並將原始摘要、方向、報告時間和來源存入個人筆記；「延續追蹤」頁用來管理狀態與查看後續評估。下一次主機分析才會更新結果，按鈕不會即時啟動本機模型。
 詳細報告與來源證據一起原子發布；中斷後從尚未完成的方向續跑。需要用已存來源重製詳細報告時執行 `python3 -m worker.runner --once --refresh-reports`。
@@ -58,8 +58,7 @@ npm run dev
 npm run build
 npm test
 ```
-登入連結由網站登入表單發送。Supabase Auth 的 Site URL/redirect allow list 必須包含網站網址。
-未授權帳號即使在 Supabase 完成驗證，也不能建立資料；必須由管理者加入 owners 表。
+網站不寄送 Email、不建立登入 session，也不讀取瀏覽器舊登入紀錄。管理員在 workspace_access 寫入 singleton=true 與既有 owners 的 owner_id，指定公開的閱讀空間；此列不能由瀏覽器修改。既有 Auth 擁有者 ID 保留供主機關聯資料使用。
 
 ## 執行端
 1. 在正式主機安裝 Python 3.9+ 與 Codex CLI，執行 `codex login`，使用自己的 ChatGPT 登入。
@@ -88,6 +87,8 @@ npm run build
 npx playwright install chromium
 npm run dev
 npm run test:e2e
+# 可選：免登入讀寫驗證；新追蹤會清除，收藏狀態會還原
+TEST_ALLOW_WRITES=1 npm run test:e2e
 # 可選：真實雲端整合測試（需要 .env.worker；自建、清除隔離測試帳號）
 python3 -m tests.integration
 ```
@@ -100,7 +101,7 @@ URL 正規化與穩定 ID 防止同文重複；尚不包含完整語意事件聚
 候選以「目的＋正規化研究問題」穩定識別；改寫措辭的相似問題仍可能形成不同候選，需人工判斷。
 最多帶入 40 個正式追蹤，完整候選身份與最近歷史一起提供上下文。此上限不代表所有項目均已評估。
 尚未介接專用即時行情／籌碼 API；公開網頁可能提供行情或估值，必須保留時點與缺口。不提供交易執行、多用戶協作、通知寄送或離線閱讀。
-RSS 是可選補充來源；研究設定存在私人 Supabase，不公開到 GitHub。
+RSS 是可選補充來源；研究設定存在 Supabase，不提交 GitHub；網站採完全免登入存取。
 
 規格來源：[Notion AI RSS v5](https://app.notion.com/p/3ff9d64f640e8028aae2c4b2cc6501cc)
-官方技術依據：[Codex App Server](https://learn.chatgpt.com/docs/app-server)、[Codex non-interactive](https://learn.chatgpt.com/docs/non-interactive-mode)、[Supabase RLS](https://supabase.com/docs/guides/database/postgres/row-level-security)、[Email login](https://supabase.com/docs/guides/auth/auth-email-passwordless)。
+官方技術依據：[Codex App Server](https://learn.chatgpt.com/docs/app-server)、[Codex non-interactive](https://learn.chatgpt.com/docs/non-interactive-mode)、[Supabase RLS](https://supabase.com/docs/guides/database/postgres/row-level-security)。

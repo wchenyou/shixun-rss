@@ -3,8 +3,8 @@
 
 | 規格 | 程式 |
 | --- | --- |
-| 私人線上閱讀與管理 | src/main.tsx、src/data.ts |
-| 登入、擁有者隔離 | owners、RLS、Supabase Auth |
+| 免登入線上閱讀與管理 | src/main.tsx、src/data.ts |
+| 單一公開閱讀空間、擁有者隔離 | workspace_access、owners、anon RLS |
 | 雲端設定為準 | worker/cloud.py、Runner.cycle |
 | RSS/Atom、穩定 ID | worker/core.py |
 | 全網即時搜尋、工具證據校驗、網頁擷取 | worker/search.py、worker/codex.py |
@@ -24,7 +24,7 @@
 
 ## 資料權限
 Claude 備援使用官方本機 CLI 的訂閱授權，與 Codex 一樣不取得 Supabase 憑證。只允許指定的搜尋工具，無 Bash／本機檔案工具；原頁擷取仍由受控 Python 程序驗證公開網址。
-前端 publishable key 是公開識別，不是機密。資料權限由登入 JWT、owners admission、owner_id RLS 控制。
+前端只使用 publishable key 與 anon 角色，不建立 session。workspace_access 選定唯一可公開讀寫的 owner_id，瀏覽器不能修改配置。anon RLS 只開放該擁有者的設定／追蹤／筆記及已發布分析；其他擁有者仍隔離。AI 表、主機狀態、發布 RPC 仍拒絕 anon 寫入。公開閱讀空間內的內容不再保密，所有訪客共享收藏和筆記。
 主機使用 service_role，具高權限並可略過 RLS。憑證只在 .env.worker；這是可信任個人主機架構，非多租戶隔離執行環境。
 SQL publication RPC 拒絕 anon/authenticated 執行；只允許 service_role。
 分析文字不可由前端改寫；收藏、已讀與筆記採獨立表。

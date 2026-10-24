@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import type { Session } from "@supabase/supabase-js";
-import { supabase, emptyData, fetchAll } from "./data";
+import { supabase, emptyData, fetchAll, fetchWorkspaceOwner } from "./data";
 import type { Dataset, Track, Article, Purpose, Source } from "./types";
 import "./style.css";
 import { ReportReader, type TrackingSelection } from "./reports";
@@ -45,8 +44,8 @@ const time = (s: string | null | undefined) =>
 const safeUrl = (s: string) => (/^https?:\/\//i.test(s) ? s : "#");
 function App() {
   const [readingMode, setReadingMode] = useState("reports");
-  const [session, setSession] = useState<Session | null>(null),
-    [ready, setReady] = useState(false);
+  const [ownerId, setOwnerId] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
   const [data, setData] = useState<Dataset>(emptyData),
     [page, setPage] = useState("read");
   const [busy, setBusy] = useState(false),
@@ -76,7 +75,7 @@ function App() {
     });
   }
   async function saveTracking() {
-    if (!trackingDraft || !supabase || !session) return;
+    if (!trackingDraft || !supabase || !ownerId) return;
     const draft = trackingDraft;
     const title = draft.title.trim(),
       question = draft.question.trim();
@@ -139,6 +138,7 @@ function App() {
     setBusy(true);
     setError("");
     try {
+      setOwnerId(await fetchWorkspaceOwner());
       setData(await fetchAll());
     } catch (e) {
       setError((e as Error).message);
@@ -147,33 +147,15 @@ function App() {
     }
   }, []);
   useEffect(() => {
-    if (!supabase) {
-      setReady(true);
-      return;
-    }
-    supabase.auth.getSession().then(({ data, error }) => {
-      if (error) setError(error.message);
-      setSession(data.session);
-      setReady(true);
-    });
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_e, s) => {
-      setSession(s);
-      if (!s) setData(emptyData);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
-  useEffect(() => {
-    if (session) void reload();
-  }, [session, reload]);
+    void reload().finally(() => setReady(true));
+  }, [reload]);
   async function write(
     table: string,
     value: Record<string, unknown>,
     id?: string,
     conflict?: string,
   ) {
-    if (!supabase || !session) return;
+    if (!supabase || !ownerId) return;
     setBusy(true);
     setError("");
     setNotice("");
@@ -183,7 +165,7 @@ function App() {
         : supabase
             .from(table)
             .upsert(
-              { ...value, owner_id: session.user.id },
+              { ...value, owner_id: ownerId },
               { onConflict: conflict || "id" },
             );
       const { error } = await q;
@@ -280,7 +262,7 @@ function App() {
           </div>
         </a>
         <div className="workspace">
-          個人閱讀空間 <span>PRIVATE</span>
+          個人閱讀空間 <span>PERSONAL</span>
         </div>
         <nav aria-label="主要導覽">
           {[
@@ -310,10 +292,8 @@ function App() {
           <div className="profile">
             <span>A</span>
             <div>
-              {session?.user.email || "你的私人情報筆記"}
-              {session && (
-                <button onClick={() => supabase?.auth.signOut()}>登出</button>
-              )}
+              你的情報閱讀空間
+              <small>直接進入 · 免登入</small>
             </div>
           </div>
         </div>
@@ -342,7 +322,7 @@ function App() {
             <h1>{heading[page]}</h1>
             <button
               className="secondary"
-              disabled={!session || busy}
+              disabled={busy}
               onClick={() => void reload()}
             >
               ↻ {busy ? "讀取中" : "重新整理"}
@@ -352,7 +332,7 @@ function App() {
           {error && (
             <div className="alert error" role="alert">
               {error}{" "}
-              <button onClick={() => void reload()} disabled={!session}>
+              <button onClick={() => void reload()} disabled={busy}>
                 重試
               </button>
             </div>
@@ -363,9 +343,11 @@ function App() {
             </div>
           )}
           {!ready ? (
-            <div className="empty">正在確認登入狀態…</div>
-          ) : !session ? (
-            <Login configured={!!supabase} />
+            <div className="empty">正在讀取閱讀空間…</div>
+          ) : !ownerId ? (
+            <div className="empty">
+              閱讀空間尚未載入，請按「重新整理」重試。
+            </div>
           ) : (
             <>
               <section className="summary-bar" aria-label="資料狀態">
@@ -1068,128 +1050,6 @@ function App() {
         </Modal>
       )}
     </div>
-  );
-}
-function Login({ configured }: { configured: boolean }) {
-  const [message, setMessage] = useState(""),
-    [busy, setBusy] = useState(false);
-  return (
-    <section className="welcome">
-      <div>
-        <span className="eyebrow">A QUIETER WAY TO STAY INFORMED</span>
-        <h2>
-          資訊會過去。
-          <br />
-          好的問題，值得留下。
-        </h2>
-        <p>
-          搜尋你關心的議題，整理有依據的摘要，
-          <br />
-          再讓每一個值得追蹤的問題持續累積。
-        </p>
-        <div className="welcome-steps">
-          <span>01 收集</span>
-          <i>→</i>
-          <span>02 理解</span>
-          <i>→</i>
-          <span>03 延續</span>
-        </div>
-      </div>
-      <form
-        onSubmit={async (e) => {
-          e.preventDefault();
-          if (!supabase) return;
-          setBusy(true);
-          setMessage("");
-          const f = new FormData(e.currentTarget);
-          let timeout: ReturnType<typeof setTimeout> | undefined;
-          try {
-            const { error } = await Promise.race([
-              supabase.auth.signInWithOtp({
-                email: String(f.get("email")).trim(),
-                options: {
-                  shouldCreateUser: false,
-                  emailRedirectTo: new URL(
-                    import.meta.env.BASE_URL,
-                    window.location.origin,
-                  ).href,
-                },
-              }),
-              new Promise<never>((_, reject) => {
-                timeout = setTimeout(
-                  () => reject(new Error("login_timeout")),
-                  20000,
-                );
-              }),
-            ]);
-            if (error) {
-              const messages: Record<string, string> = {
-                signup_disabled:
-                  "此信箱尚未啟用。首次登入請先點擊管理員寄出的邀請信；已啟用的帳號請確認 Email 是否正確。",
-                over_email_send_rate_limit:
-                  "登入信寄送次數已達上限，請稍後再試，並先檢查收件匣與垃圾郵件。",
-                over_request_rate_limit: "操作太頻繁，請稍候再試。",
-                email_address_not_authorized:
-                  "寄信服務尚未授權此信箱，請聯絡管理員。",
-                email_provider_disabled:
-                  "Email 登入服務尚未啟用，請聯絡管理員。",
-              };
-              setMessage(
-                messages[
-                  error.code ||
-                    (/signups not allowed/i.test(error.message)
-                      ? "signup_disabled"
-                      : error.status === 429
-                        ? "over_email_send_rate_limit"
-                        : "")
-                ] || "無法寄送登入信：" + error.message,
-              );
-            } else {
-              setMessage(
-                "登入信寄送請求已受理。請查看收件匣與垃圾郵件，點擊最新一封信中的連結返回拾訊；不需要輸入密碼。",
-              );
-            }
-          } catch {
-            setMessage(
-              "連線未完成，請檢查網路並先查看信箱；若沒有收到信，請稍候再試。",
-            );
-          } finally {
-            clearTimeout(timeout);
-            setBusy(false);
-          }
-        }}
-      >
-        <span className="tag">私人閱讀空間</span>
-        <h2>歡迎回到拾訊</h2>
-        <p>
-          {configured
-            ? "輸入已授權的 Email，我們會寄送免密碼登入連結。首次使用請先開啟邀請信。"
-            : "雲端尚未完成設定，完成後即可登入。"}
-        </p>
-        <label>
-          Email
-          <input
-            type="email"
-            name="email"
-            autoComplete="email"
-            placeholder="you@example.com"
-            required
-            disabled={!configured}
-          />
-        </label>
-        <button className="primary" disabled={!configured || busy}>
-          {busy ? "寄送中…" : "寄送登入連結 →"}
-        </button>
-        {message && (
-          <p className="login-message" role="status" aria-live="polite">
-            {message}
-          </p>
-        )}
-        <small>
-          送出後請到信箱點擊連結，才會進入閱讀空間。僅限已授權帳號，未開放公開註冊。
-        </small>
-      </form>
-    </section>
   );
 }
 function Empty({
