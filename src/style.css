@@ -1125,6 +1125,9 @@ h1 { text-wrap: balance; }
 .budget-section {
   margin-bottom: 28px;
 }
+.budget-section > .alert {
+  color: var(--ink);
+}
 .budget-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
