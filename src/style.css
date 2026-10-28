@@ -1129,7 +1129,8 @@ h1 { text-wrap: balance; }
   --muted: #596457;
 }
 .tracking-overview,
-.tracking-selection {
+.tracking-selection,
+.bookmark-help {
   --muted: #596457;
 }
 .budget-section > .alert {
