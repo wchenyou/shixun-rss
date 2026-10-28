@@ -10,3 +10,6 @@ __pycache__/
 test-results/
 playwright-report/
 supabase/.temp/
+
+.impeccable/review/
+.playwright-cli/

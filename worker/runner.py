@@ -11,6 +11,7 @@ from pathlib import Path
 from .core import now, stable_id, parse_feed, fetch_feed, config_hash, quota_state, validate_result
 from .codex import Codex, CodexFailure
 from .cloud import Cloud
+from .budget import Budget,BudgetStop,compact_context
 
 class Store:
     def __init__(self,path):
@@ -43,14 +44,7 @@ class Store:
                     pending_uploads=self.db.execute("select count(*) from jobs where stage='upload_pending'").fetchone()[0])
 
 def build_payload(result,articles,config,job_id,owner,node,source_results):
-    candidates=[];evaluations=[]
-    # Normalized research question + purpose is a stable cross-day candidate identity.
-    for c in result['candidates']:
-        normalized=''.join(ch for ch in c['question'].casefold() if ch.isalnum())
-        tid=stable_id(owner,c['purpose_id'],normalized)
-        candidates.append({k:c[k] for k in ('purpose_id','title','question')}|{'id':tid})
-        evaluations.append({k:c[k] for k in ('summary','evidence_ids','counter_evidence','next_question')}|{'track_id':tid,'change':'新候選'})
-    evaluations.extend(result['evaluations'])
+    candidates=[];evaluations=list(result['evaluations'])
     unique={}
     for e in evaluations:unique[e['track_id']]=e
     evaluations=[e|{'id':stable_id(job_id,e['track_id'])} for e in unique.values()]
@@ -64,6 +58,7 @@ class Runner:
     def __init__(self,store,cloud,codex,fetcher=fetch_feed,clock=time.time,buckets=('codex',),web_search=False,rss=True,search_interval=21600,fallback=None,detailed_reports=False,analyzer=None):
         self.store=store;self.cloud=cloud;self.codex=codex;self.fetcher=fetcher;self.clock=clock;self.buckets=buckets
         self.web_search=web_search;self.rss=rss;self.search_interval=search_interval
+        self.budget=None
         self.fallback=fallback;self.active=codex;self.detailed_reports=detailed_reports;self.analyzer=analyzer
     def activate_fallback(self):
         if not self.fallback:raise CodexFailure('Codex quota unavailable','waiting_quota')
@@ -81,16 +76,25 @@ class Runner:
     def analysis_model(self):
         return self.analyzer if self.analyzer is not None else self.active
 
+    def model_call(self,model,method,*args):
+        token=self.budget.reserve(method,args) if self.budget else None
+        model.last_usage=None
+        success=False
+        try:
+            result=getattr(model,method)(*args);success=True;return result
+        finally:
+            if self.budget and token is not None:self.budget.finish(token,getattr(model,'last_usage',None),success)
+
     def invoke(self,method,*args):
         # Explicit analysis provider is independent of search quota/fallback routing.
         if method in ('analyze','report') and self.analyzer is not None:
-            return getattr(self.analyzer,method)(*args)
-        try:return getattr(self.active,method)(*args)
+            return self.model_call(self.analyzer,method,*args)
+        try:return self.model_call(self.active,method,*args)
         except CodexFailure as e:
             if e.code!='waiting_quota' or self.active is not self.codex or not self.fallback:raise
             self.remember_limit();self.activate_fallback()
             self.status('fallback_searching' if method=='discover' else 'fallback_running')
-            return getattr(self.active,method)(*args)
+            return self.model_call(self.active,method,*args)
 
     def execution(self,stamp):
         search=(stamp.get('provider') or {'provider':'codex','model':'unknown'}) if self.web_search else None
@@ -102,7 +106,7 @@ class Runner:
                 'fallback_reason':'codex_quota_exhausted' if self.active is self.fallback else None}
 
     def status(self,status,error=None,next_retry=None):
-        record={'status':status,'error':error,'last_seen':now(),'next_retry_at':datetime.fromtimestamp(next_retry,timezone.utc).isoformat() if next_retry else None,
+        record={'agent_version':'2026-10-28',**({'usage_summary':self.budget.summary()} if self.budget else {}),'status':status,'error':error,'last_seen':now(),'next_retry_at':datetime.fromtimestamp(next_retry,timezone.utc).isoformat() if next_retry else None,
                 'last_check_at':self.store.get('last_check_at'),**self.store.counts()}
         self.store.set('status',record)
         try:self.cloud.heartbeat(record)
@@ -120,6 +124,8 @@ class Runner:
         try:config=self.cloud.config()
         except Exception:
             self.status('failed','Cannot read cloud settings; no analysis started');return
+        settings=config.get('reader_settings',[])
+        self.budget=Budget(self.store,settings[0],self.clock) if settings else None
         source_results=[]
         for source in (config['sources'] if self.rss else []):
             if not source['enabled']:continue
@@ -175,6 +181,8 @@ class Runner:
                     stamp={'config_hash':digest,'at':self.clock(),'coverage':coverage,
                            'provider':{'provider':getattr(self.active,'provider','codex'),'model':getattr(self.active,'model','unknown')}}
                     self.store.set('web_search_cache',stamp)
+                except BudgetStop as e:
+                    self.wait({'status':'budget_wait','next_retry_at':e.retry,'reason':str(e)});return
                 except CodexFailure as e:
                     self.wait({'status':e.code,'next_retry_at':self.clock()+900,'reason':str(e)});return
                 except Exception:
@@ -191,22 +199,27 @@ class Runner:
             if previous['_config_hash']!=config_hash(config):
                 self.store.db.execute('delete from jobs where id=?',(job['id'],));self.store.db.commit();unfinished=[]
         if not unfinished:
-            batch=self.store.pending()
+            pending=self.store.pending(limit=100000)
+            eligible=self.budget.screen(pending) if self.budget else pending
+            batch=self.budget.fit_batch(eligible,config) if self.budget else eligible[:40]
+            if not batch and eligible:
+                self.wait({'status':'budget_wait','next_retry_at':self.budget.tomorrow(),'reason':'剩餘預算不足，文章留待後續處理。'});return
+            if not batch:
+                self.status('filtered','暫未納入的文章仍保留；可調整關鍵字。');return
             snapshot={**config,'_config_hash':config_hash(config),'_started_at':now(),'_execution':self.execution(stamp)}
             snapshot['history']=self.cloud.history()
-            # Keep all candidate identities, cap active context explicitly.
-            snapshot['_active_track_total']=sum(t['status']=='active' for t in snapshot['tracks'])
-            active=[t for t in snapshot['tracks'] if t['status']=='active'][:40]
-            snapshot['tracks']=active+[t for t in snapshot['tracks'] if t['status']!='active']
+            snapshot=compact_context(snapshot,batch)
             job={'id':str(uuid.uuid4()),'snapshot':json.dumps(snapshot),'articles':json.dumps(batch),'stage':'analyzing','payload':None}
             self.store.save_job(job)
         snapshot=json.loads(job['snapshot']);batch=json.loads(job['articles'])
+        body_chars=self.budget.cfg['body_chars'] if self.budget else 1200
+        model_batch=[{**a,'content':a['content'][:body_chars]} for a in batch]
         self.status('claude_running' if self.analyzer is not None and getattr(self.analyzer,'provider',None)=='claude' else 'fallback_running' if self.active is self.fallback else 'running')
         try:
             if job['stage']=='reporting':
                 result=json.loads(job['payload'])
             else:
-                result=validate_result(self.invoke('analyze',batch,snapshot),batch,snapshot)
+                result=validate_result(self.invoke('analyze',model_batch,snapshot),batch,snapshot)
                 if self.detailed_reports:
                     result['purpose_reports']=[]
                     job['stage']='reporting';job['payload']=json.dumps(result);self.store.save_job(job)
@@ -216,7 +229,9 @@ class Runner:
                 for purpose in snapshot['purposes']:
                     if not purpose['enabled'] or purpose['id'] in completed:continue
                     relevant={a['article_id'] for a in result['analyses'] if purpose['id'] in a['purpose_ids']}
-                    evidence=[a for a in batch if a['id'] in relevant]
+                    summaries={a['article_id']:a for a in result['analyses']}
+                    evidence=[{**a,'content':'資料類型：本輪 AI 摘要，非原文。\n'+summaries[a['id']]['summary']+'\n'+summaries[a['id']]['relevance']} for a in batch if a['id'] in relevant]
+                    if not evidence:continue
                     context={**snapshot,'_source_results':source_results}
                     report=validate_report(self.invoke('report',purpose,evidence,context),purpose,evidence)
                     report['_execution']={'provider':getattr(self.analysis_model(),'provider','codex'),'model':getattr(self.analysis_model(),'model','unknown')}
@@ -227,6 +242,8 @@ class Runner:
             job['snapshot']=json.dumps(snapshot)
             payload=build_payload(result,batch,snapshot,job['id'],self.cloud.owner,self.cloud.node,source_results)
             job['payload']=json.dumps(payload);job['stage']='upload_pending';self.store.save_job(job)
+        except BudgetStop as e:
+            self.wait({'status':'budget_wait','next_retry_at':e.retry,'reason':str(e)});return
         except CodexFailure as e:
             if e.code=='waiting_quota':
                 try:q=quota_state(self.codex.quota(),self.buckets,self.store.get('attempt',0),self.clock())

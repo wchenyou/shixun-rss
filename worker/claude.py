@@ -67,6 +67,7 @@ class Claude(Codex):
             raise CodexFailure('Run local Claude auth login --claudeai; subscription authentication is required','fallback_auth_required')
 
     def execute(self,prompt,schema,search=False):
+        self.last_usage=None
         self.ensure_ready()
         tools='WebSearch,WebFetch' if search else ''
         args=[self.binary,'--print','--model',self.model,'--effort',self.reasoning_effort,
@@ -86,6 +87,8 @@ class Claude(Codex):
             try:events.append(json.loads(line))
             except ValueError:continue
         final=next((e for e in reversed(events) if e.get('type')=='result'),{})
+        from .budget import claude_usage
+        self.last_usage=claude_usage(final)
         if response.returncode or final.get('is_error') or not final:
             errors={e.get('error') for e in events if isinstance(e.get('error'),str)}
             blocked=any(e.get('type')=='rate_limit_event' and e.get('rate_limit_info',{}).get('status')=='rejected' for e in events)

@@ -2,7 +2,8 @@
   "type": "object",
   "properties": {
     "report": {
-      "type": "string"
+      "type": "string",
+      "maxLength": 1600
     },
     "analyses": {
       "type": "array",
@@ -13,10 +14,12 @@
             "type": "string"
           },
           "summary": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 360
           },
           "relevance": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 120
           },
           "purpose_ids": {
             "type": "array",
@@ -74,7 +77,8 @@
           "next_question"
         ],
         "additionalProperties": false
-      }
+      },
+      "maxItems": 0
     },
     "evaluations": {
       "type": "array",

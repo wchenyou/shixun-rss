@@ -41,6 +41,12 @@ class ReportPublicationTests(unittest.TestCase):
   self.assertEqual(self.calls,[fixtures.PURPOSE])
  def test_completed_reports_survive_restart_without_reanalysis(self):
   second=copy.deepcopy(self.cloud.settings['purposes'][0]);second['id']='second-purpose';self.cloud.settings['purposes'].append(second)
+  original=self.codex.analyze
+  def relevant_to_both(articles,config):
+   value=original(articles,config)
+   for item in value['analyses']:item['purpose_ids'].append('second-purpose')
+   return value
+  self.codex.analyze=relevant_to_both
   def fail_second(purpose,articles,config):
    self.calls.append(purpose['id'])
    if purpose['id']=='second-purpose':raise CodexFailure('interrupted')

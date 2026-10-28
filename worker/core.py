@@ -81,7 +81,7 @@ def parse_feed(raw, source, owner):
 
 def config_hash(config):
     # Include notes and all versions, never rely on a model to invent versions.
-    return hashlib.sha256(json.dumps(config,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+    return hashlib.sha256(json.dumps({k:v for k,v in config.items() if k!="reader_settings"},sort_keys=True,ensure_ascii=False).encode()).hexdigest()
 
 def quota_state(result, bucket_ids=('codex',), attempt=0, timestamp=None):
     import time
@@ -125,10 +125,7 @@ def validate_result(result, articles, config):
         if not a['summary'] or not isinstance(a['summary'],str) or not isinstance(a['relevance'],str):
             raise ValueError('Invalid analysis')
         if not set(a['purpose_ids'])<=purposes: raise ValueError('Unknown purpose')
-    for c in result['candidates']:
-        if c['purpose_id'] not in purposes or not c['question'].strip() or not c['title'].strip():
-            raise ValueError('Invalid candidate')
-        if not c['evidence_ids'] or not set(c['evidence_ids'])<=ids: raise ValueError('Invalid candidate evidence')
+    if result['candidates']:raise ValueError('Only the user can create tracking items')
     seen=set()
     for e in result['evaluations']:
         if e['track_id'] not in tracks or e['track_id'] in seen: raise ValueError('Unknown or duplicate track')

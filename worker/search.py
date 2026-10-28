@@ -55,6 +55,8 @@ def retrieve(result, owner, fetcher=fetch_feed):
     published=None
     try:
         raw=fetcher(url)
+        if raw.lstrip().startswith(b'%PDF-') or b'\x00' in raw:
+            raise ValueError('Binary document is not readable HTML; retain search excerpt')
         parser=PageText();parser.feed(raw.decode('utf-8',errors='replace'))
         main=clean(' '.join(parser.main))
         text=main if len(main)>=120 else clean(' '.join(parser.parts))

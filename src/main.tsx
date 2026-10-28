@@ -4,6 +4,8 @@ import { supabase, emptyData, fetchAll, fetchWorkspaceOwner } from "./data";
 import type { Dataset, Track, Article, Purpose, Source } from "./types";
 import "./style.css";
 import { ReportReader, type TrackingSelection } from "./reports";
+import { ArticleExcerpt, TrackSummary } from "./tracking";
+import { BudgetSettings } from "./budget";
 
 const labels: Record<string, string> = {
   candidate: "待確認",
@@ -64,6 +66,7 @@ function App() {
       })
     | null
   >(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [trackingSaving, setTrackingSaving] = useState(false);
   const [trackingError, setTrackingError] = useState("");
   function startTracking(selection: TrackingSelection) {
@@ -83,6 +86,7 @@ function App() {
     if (!title || !question) return;
     const existing = data.tracks.find(
       (t) =>
+        !t.deleted_at &&
         t.purpose_id === draft.purpose_id &&
         t.question.trim() === question &&
         t.id !== draft.id,
@@ -97,32 +101,19 @@ function App() {
     setTrackingSaving(true);
     setTrackingError("");
     try {
-      await write("tracks", {
-        id: draft.id,
-        purpose_id: draft.purpose_id,
-        title,
-        question,
-        status: "active",
+      const { error } = await supabase.rpc("create_manual_track", {
+        p_id: draft.id,
+        p_purpose: draft.purpose_id,
+        p_title: title,
+        p_question: question,
+        p_excerpt: draft.excerpt.slice(0, 2000),
+        p_article_id: draft.article_id || null,
+        p_report_id: draft.run_id || null,
+        p_kind: draft.origin_kind || (draft.run_id ? "report" : "manual"),
+        p_evidence_ids: draft.evidence_ids,
       });
-      const sources = draft.evidence_ids
-        .map((id) => data.articles.find((a) => a.id === id))
-        .filter((a): a is Article => !!a);
-      await write(
-        "track_notes",
-        {
-          track_id: draft.id,
-          note: [
-            `來自報告：${draft.report}`,
-            `發布：${time(draft.published_at)}`,
-            "原始摘要：",
-            draft.excerpt,
-            "引用來源：",
-            ...sources.map((a) => `${a.title}\n${a.url}`),
-          ].join("\n\n"),
-        },
-        undefined,
-        "owner_id,track_id",
-      );
+      if (error) throw error;
+      await reload();
       setTrackingDraft(null);
       setNotice("已加入延續追蹤；下一輪分析會依這個問題搜尋並更新進展。");
     } catch (e) {
@@ -229,9 +220,52 @@ function App() {
           !data.article_states.some((s) => s.article_id === a.id && s.read)),
     )
     .sort((a, b) => b.collected_at.localeCompare(a.collected_at));
-  const tracks = data.tracks.filter(
-    (t) => filter === "all" || t.status === filter,
-  );
+  const visibleTracks = data.tracks.filter((t) => !t.deleted_at);
+  const tracks =
+    filter === "trash"
+      ? data.tracks.filter((t) => !!t.deleted_at)
+      : visibleTracks.filter((t) => filter === "all" || t.status === filter);
+  const manualTracking = () => {
+    if (!data.purposes.length) {
+      setError("請先新增一個研究方向，再建立追蹤。");
+      return;
+    }
+    startTracking({
+      purpose_id: data.purposes[0].id,
+      title: "",
+      excerpt: "",
+      report: "手動新增",
+      origin_kind: "manual",
+      published_at: null,
+      evidence_ids: [],
+    });
+  };
+  const deleteTracking = async () => {
+    const ids =
+      confirmDelete === "all"
+        ? visibleTracks.map((t) => t.id)
+        : [confirmDelete!];
+    const { error } = await supabase!.rpc("delete_manual_tracks", {
+      p_ids: ids,
+    });
+    if (error) {
+      setError(error.message);
+      return;
+    }
+    setConfirmDelete(null);
+    setTrack(null);
+    await reload();
+    setNotice("已移到回收區，文章與收藏保留。");
+  };
+  const restoreTracking = async (id: string) => {
+    const { error } = await supabase!.rpc("restore_manual_track", { p_id: id });
+    if (error) {
+      setError(error.message);
+      return;
+    }
+    await reload();
+    setNotice("已由你手動復原追蹤。");
+  };
   const navigate = (p: string) => {
     setPage(p);
     setFilter("all");
@@ -241,7 +275,7 @@ function App() {
   };
   const heading: Record<string, string> = {
     read: "閱讀",
-    saved: "收藏",
+    saved: "文章收藏",
     tracks: "延續追蹤",
     settings: "方向與來源",
     status: "運作狀態",
@@ -268,7 +302,7 @@ function App() {
         <nav aria-label="主要導覽">
           {[
             ["read", "◫", "閱讀"],
-            ["saved", "◇", "收藏"],
+            ["saved", "◇", "文章收藏"],
             ["tracks", "⌁", "延續追蹤"],
             ["settings", "☷", "方向與來源"],
             ["status", "◷", "運作狀態"],
@@ -281,7 +315,13 @@ function App() {
               <span>{icon}</span>
               {name}
               {id === "tracks" && (
-                <b>{data.tracks.filter((t) => t.status === "active").length}</b>
+                <b>
+                  {
+                    data.tracks.filter(
+                      (t) => !t.deleted_at && t.status === "active",
+                    ).length
+                  }
+                </b>
               )}
             </button>
           ))}
@@ -310,7 +350,7 @@ function App() {
                 : page === "status"
                   ? "運作狀態"
                   : page === "saved"
-                    ? "收藏"
+                    ? "文章收藏"
                     : "所有資訊"}
           </span>
           <span>
@@ -365,7 +405,11 @@ function App() {
                   <div>
                     <span>正式追蹤</span>
                     <strong>
-                      {data.tracks.filter((t) => t.status === "active").length}
+                      {
+                        data.tracks.filter(
+                          (t) => !t.deleted_at && t.status === "active",
+                        ).length
+                      }
                       <small> 項</small>
                     </strong>
                   </div>
@@ -378,6 +422,12 @@ function App() {
               )}
               {(page === "read" || page === "saved") && (
                 <>
+                  {page === "saved" && (
+                    <p className="bookmark-help">
+                      文章收藏是稍後閱讀的書籤，不會啟動 AI
+                      追蹤；移出收藏不影響延續追蹤。
+                    </p>
+                  )}
                   {page === "read" && (
                     <label className="reading-view-select">
                       <span className="sr-only">閱讀內容</span>
@@ -541,34 +591,21 @@ function App() {
                             <small>資料截止 {time(last?.data_cutoff)}</small>
                           </section>
                           <section className="side-tracks">
-                            <div className="section-heading">
-                              <h2>值得延續的問題</h2>
-                              <span>↗</span>
-                            </div>
-                            {data.tracks
-                              .filter((t) => t.status === "candidate")
-                              .slice(0, 3)
-                              .map((t) => (
-                                <button
-                                  className="candidate-link"
-                                  key={t.id}
-                                  onClick={() => {
-                                    navigate("tracks");
-                                    setTrack(t);
-                                  }}
-                                >
-                                  {t.title}
-                                  <span>查看候選 →</span>
-                                </button>
-                              ))}
-                            {!data.tracks.some(
-                              (t) => t.status === "candidate",
-                            ) && (
-                              <p>
-                                AI
-                                提出的議題會先放在候選區，由你決定是否開始追蹤。
-                              </p>
-                            )}
+                            <h2>我的延續追蹤</h2>
+                            <p>只有你手動儲存的問題會加入，AI 不再新增候選。</p>
+                            {visibleTracks.slice(0, 3).map((t) => (
+                              <button
+                                className="candidate-link"
+                                key={t.id}
+                                onClick={() => {
+                                  navigate("tracks");
+                                  setTrack(t);
+                                }}
+                              >
+                                {t.title}
+                                <span>查看變化 →</span>
+                              </button>
+                            ))}
                           </section>
                         </aside>
                       </div>
@@ -578,16 +615,27 @@ function App() {
               )}
               {page === "tracks" && (
                 <>
+                  <div className="manual-tracking-actions">
+                    <p>選取文章文字或主題後，手動建立你想持續觀察的問題。</p>
+                    <button className="primary" onClick={manualTracking}>
+                      手動新增追蹤
+                    </button>
+                    {visibleTracks.length > 0 && (
+                      <button onClick={() => setConfirmDelete("all")}>
+                        清空全部追蹤
+                      </button>
+                    )}
+                  </div>
                   <div className="toolbar">
                     <div className="tabs">
-                      {["all", "candidate", "active", "paused", "archived"].map(
+                      {["all", "active", "paused", "archived", "trash"].map(
                         (s) => (
                           <button
                             className={filter === s ? "chosen" : ""}
                             key={s}
                             onClick={() => setFilter(s)}
                           >
-                            {labels[s] || "全部"}
+                            {s === "trash" ? "回收區" : labels[s] || "全部"}
                           </button>
                         ),
                       )}
@@ -595,6 +643,20 @@ function App() {
                   </div>
                   <div className="track-grid">
                     {tracks.map((t) => {
+                      if (t.deleted_at)
+                        return (
+                          <section className="track-card" key={t.id}>
+                            <span className="tag">回收區</span>
+                            <h2>{t.title}</h2>
+                            <p>{t.question}</p>
+                            <button
+                              className="primary small"
+                              onClick={() => void restoreTracking(t.id)}
+                            >
+                              復原追蹤
+                            </button>
+                          </section>
+                        );
                       const ev = data.evaluations
                         .filter((e) => e.track_id === t.id)
                         .sort((a, b) =>
@@ -618,10 +680,24 @@ function App() {
                   {!tracks.length && (
                     <Empty
                       title="從一個好問題開始。"
-                      text="閱讀之後，AI 會建議值得持續關注的研究問題。確認加入後，下一輪會延續同一項目。"
+                      text="從文章選取文字或主題，或按「手動新增追蹤」。AI 只更新你建立的項目。"
                     />
                   )}
                 </>
+              )}
+              {(page === "settings" || page === "status") && (
+                <BudgetSettings
+                  value={data.reader_settings?.[0]}
+                  node={node}
+                  save={(value) =>
+                    write(
+                      "reader_settings",
+                      value as unknown as Record<string, unknown>,
+                      undefined,
+                      "owner_id",
+                    )
+                  }
+                />
               )}
               {page === "settings" && (
                 <>
@@ -793,28 +869,16 @@ function App() {
           <p className="meta">
             {selected.source_name} · {time(selected.published_at)}
           </p>
-          <h3>摘要</h3>
-          <p className="preserve">
-            {analyses.get(selected.id)?.summary || "尚未分析"}
-          </p>
-          {analyses.get(selected.id)?.purpose_ids[0] && (
-            <button
-              onClick={() =>
-                startTracking({
-                  purpose_id: analyses.get(selected.id)!.purpose_ids[0],
-                  title: selected.title,
-                  excerpt: analyses.get(selected.id)?.summary || "",
-                  report: selected.title,
-                  published_at: selected.collected_at,
-                  evidence_ids: [selected.id],
-                })
-              }
-            >
-              ＋ 加入延續追蹤
-            </button>
-          )}
-          <h3>取得的來源文字</h3>
-          <p className="preserve">{selected.content || "僅取得標題"}</p>
+          <ArticleExcerpt
+            article={selected}
+            summary={analyses.get(selected.id)?.summary || ""}
+            purpose={
+              analyses.get(selected.id)?.purpose_ids[0] ||
+              data.purposes[0]?.id ||
+              ""
+            }
+            onTrack={startTracking}
+          />
           <a href={safeUrl(selected.url)} target="_blank" rel="noreferrer">
             開啟原文 ↗
           </a>
@@ -857,6 +921,7 @@ function App() {
               <textarea
                 required
                 rows={4}
+                maxLength={3000}
                 value={trackingDraft.question}
                 onChange={(e) =>
                   setTrackingDraft({
@@ -866,11 +931,17 @@ function App() {
                 }
               />
             </label>
-            <p className="meta">
+            {trackingDraft.origin_kind !== "report" ? <label>
+              研究方向
+              <select value={trackingDraft.purpose_id} onChange={(e) =>
+                setTrackingDraft({ ...trackingDraft, purpose_id: e.target.value })}>
+                {data.purposes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </label> : <p className="meta">
               研究方向：
               {data.purposes.find((p) => p.id === trackingDraft.purpose_id)
                 ?.name || "歷史研究方向"}
-            </p>
+            </p>}
             <details>
               <summary>原始摘要與來源</summary>
               <p>{trackingDraft.report}</p>
@@ -904,6 +975,16 @@ function App() {
       {track && (
         <Modal title={track.title} close={() => setTrack(null)}>
           <p>{track.question}</p>
+          <TrackSummary
+            track={data.tracks.find((t) => t.id === track.id) || track}
+            data={data}
+          />
+          <button
+            className="danger-action"
+            onClick={() => setConfirmDelete(track.id)}
+          >
+            刪除這個追蹤
+          </button>
           <label>
             追蹤狀態
             <select
@@ -919,7 +1000,7 @@ function App() {
                 ).catch(() => {})
               }
             >
-              {["candidate", "active", "paused", "archived"].map((s) => (
+              {["active", "paused", "archived"].map((s) => (
                 <option value={s} key={s}>
                   {labels[s]}
                 </option>
@@ -975,6 +1056,19 @@ function App() {
                 })}
               </section>
             ))}
+        </Modal>
+      )}
+      {confirmDelete && (
+        <Modal
+          title={
+            confirmDelete === "all" ? "清空全部延續追蹤？" : "刪除這個追蹤？"
+          }
+          close={() => setConfirmDelete(null)}
+        >
+          <p>追蹤會移到回收區，可以復原。文章、來源與文章收藏會保留。</p>
+          <button className="primary" onClick={() => void deleteTracking()}>
+            確認移到回收區
+          </button>
         </Modal>
       )}
       {editing && (

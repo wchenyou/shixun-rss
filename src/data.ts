@@ -16,6 +16,7 @@ export const supabase =
       })
     : null;
 export const emptyData: Dataset = {
+  reader_settings: [],
   purposes: [],
   sources: [],
   articles: [],
@@ -36,11 +37,13 @@ export async function fetchAll(): Promise<Dataset> {
       for (let from = 0; ; from += 1000) {
         let q = supabase!.from(table).select("*");
         q = q.order(
-          table === "article_states"
-            ? "article_id"
-            : table === "track_notes"
-              ? "track_id"
-              : "id",
+          table === "reader_settings"
+            ? "owner_id"
+            : table === "article_states"
+              ? "article_id"
+              : table === "track_notes"
+                ? "track_id"
+                : "id",
         );
         const { data, error } = await q.range(from, from + 999);
         if (error) throw new Error("雲端讀取失敗：" + error.message);

@@ -1,6 +1,12 @@
 import json
 from urllib.request import Request, urlopen
 from urllib.parse import urlencode
+def clean_transport(value):
+    if isinstance(value,str):return value.replace('\x00','')
+    if isinstance(value,list):return [clean_transport(v) for v in value]
+    if isinstance(value,dict):return {k:clean_transport(v) for k,v in value.items()}
+    return value
+
 class Cloud:
     def __init__(self,url,key,owner,node):
         self.url=url.rstrip('/');self.key=key;self.owner=owner;self.node=node
@@ -8,7 +14,7 @@ class Cloud:
         headers={'apikey':self.key,'Content-Type':'application/json'}
         if self.key.startswith('eyJ'): headers['Authorization']='Bearer '+self.key
         if prefer: headers['Prefer']=prefer
-        req=Request(self.url+'/rest/v1/'+path,data=json.dumps(body).encode() if body is not None else None,headers=headers,method=method)
+        req=Request(self.url+'/rest/v1/'+path,data=json.dumps(clean_transport(body)).encode() if body is not None else None,headers=headers,method=method)
         with urlopen(req,timeout=40) as r:
             raw=r.read()
             return json.loads(raw) if raw else None
@@ -23,7 +29,9 @@ class Cloud:
             if len(batch)<1000:return result
         raise RuntimeError('Dataset exceeds worker pagination limit')
     def config(self):
-        return {t:self.rows(t) for t in ('purposes','sources','tracks','track_notes')}
+        result={t:self.rows(t) for t in ('purposes','sources','tracks','track_notes','reader_settings')}
+        result['tracks']=[t for t in result['tracks'] if t.get('manual') and not t.get('deleted_at')]
+        return result
     def history(self):
         return self.rows('evaluations',{'order':'created_at.desc','limit':1000})[:1000]
     def publish(self,payload):

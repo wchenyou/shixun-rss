@@ -55,6 +55,13 @@ export interface Track {
   question: string;
   status: "candidate" | "active" | "paused" | "archived";
   version: number;
+  manual?: boolean;
+  deleted_at?: string | null;
+  origin_excerpt?: string;
+  origin_kind?: string;
+  origin_article_id?: string | null;
+  origin_report_id?: string | null;
+  origin_evidence_ids?: string[];
   created_at: string;
 }
 export interface Evaluation {
@@ -96,7 +103,27 @@ export interface Run {
   };
   error: string | null;
 }
+export interface ReaderSettings {
+  owner_id?: string;
+  daily_budget: number;
+  daily_calls: number;
+  batch_articles: number;
+  body_chars: number;
+  include_terms: string;
+  exclude_terms: string;
+  version?: number;
+}
 export interface NodeStatus {
+  agent_version?: string;
+  usage_summary?: {
+    day: string;
+    accounted_tokens: number;
+    reported_tokens: number;
+    unknown_runs: number;
+    calls: number;
+    pending: number;
+    filtered: number;
+  };
   id: string;
   last_seen: string;
   status: string;
@@ -117,6 +144,7 @@ export interface TrackNote {
   note: string;
 }
 export interface Dataset {
+  reader_settings: ReaderSettings[];
   purposes: Purpose[];
   sources: Source[];
   articles: Article[];

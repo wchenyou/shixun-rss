@@ -7,6 +7,9 @@ const date = (value: string | null) =>
     : "日期未確認";
 const href = (value: string) => (/^https?:\/\//i.test(value) ? value : "#");
 export type TrackingSelection = {
+  article_id?: string;
+  run_id?: string;
+  origin_kind?: string;
   purpose_id: string;
   title: string;
   excerpt: string;
@@ -216,14 +219,14 @@ export function ReportReader({
                 onClick={() =>
                   onTrack({
                     purpose_id: current.report.purpose_id,
+                    run_id: current.run.id,
+                    origin_kind: "report",
                     title: section.heading,
-                    excerpt: [
-                      ...section.paragraphs,
-                      ...section.bullets,
-                      ...section.tables.flatMap((t) =>
-                        t.rows.map((row) => row.join("／")),
-                      ),
-                    ].join("\n"),
+                    excerpt: (
+                      section.paragraphs[0] ||
+                      section.bullets[0] ||
+                      section.heading
+                    ).slice(0, 2000),
                     report: current.report.title,
                     published_at: current.run.published_at,
                     evidence_ids: section.evidence_ids,
@@ -264,6 +267,8 @@ export function ReportReader({
                       onClick={() =>
                         onTrack({
                           purpose_id: current.report.purpose_id,
+                          run_id: current.run.id,
+                          origin_kind: "report",
                           title: step,
                           excerpt: step,
                           report: current.report.title,

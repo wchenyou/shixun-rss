@@ -51,9 +51,8 @@ test("anonymous reading, bookmark persistence and tracking", async ({
       .click();
     await page.getByRole("button", { name: new RegExp(title) }).click();
     await expect(page.getByLabel("追蹤狀態")).toHaveValue("active");
-    await expect(page.getByLabel("我的筆記")).toHaveValue(
-      /來自報告：[\s\S]*原始摘要：[\s\S]*引用來源：/,
-    );
+    await expect(page.getByText("起始摘錄與來源", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("我的筆記")).toHaveValue("");
     await page.getByRole("button", { name: "關閉", exact: true }).click();
     await page.getByRole("button", { name: "◫ 閱讀", exact: true }).click();
     await page.getByLabel("閱讀內容").selectOption("sources");
