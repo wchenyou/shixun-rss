@@ -113,6 +113,22 @@ class BudgetTests(unittest.TestCase):
         self.assertEqual(self.store.counts()['pending_articles'], 2)
         self.assertEqual(self.store.get('status')['status'], 'budget_wait')
 
+    def test_invalid_evidence_counts_as_failure_and_stops_after_two(self):
+        self.clock[0] -= 43200
+        cloud, model = FakeCloud(), FakeCodex()
+        cloud.settings['reader_settings'] = [{'daily_budget': 1000000}]
+        model.invalid = True
+        runner = Runner(self.store, cloud, model, lambda _: feed(2), lambda: self.clock[0])
+        runner.cycle()
+        self.clock[0] += 3601
+        runner.cycle()
+        self.clock[0] += 3601
+        runner.cycle()
+        self.assertEqual(model.calls, 2)
+        self.assertEqual(self.store.counts()['pending_articles'], 2)
+        self.assertEqual(self.store.get('status')['status'], 'budget_wait')
+        self.assertTrue(all(r['status'] == 'failed' for r in self.budget.rows()))
+
     def test_manual_only_rejects_even_evidenced_ai_candidates(self):
         cloud, model = FakeCloud(), FakeCodex()
         articles = [{'id': 'article', 'title': 'AI', 'content': 'evidence'}]

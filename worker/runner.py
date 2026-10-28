@@ -81,7 +81,12 @@ class Runner:
         model.last_usage=None
         success=False
         try:
-            result=getattr(model,method)(*args);success=True;return result
+            result=getattr(model,method)(*args)
+            if method=='analyze':validate_result(result,args[0],args[1])
+            elif method=='report':
+                from .reports import validate_report
+                validate_report(result,args[0],args[1])
+            success=True;return result
         finally:
             if self.budget and token is not None:self.budget.finish(token,getattr(model,'last_usage',None),success)
 
@@ -219,12 +224,11 @@ class Runner:
             if job['stage']=='reporting':
                 result=json.loads(job['payload'])
             else:
-                result=validate_result(self.invoke('analyze',model_batch,snapshot),batch,snapshot)
+                result=self.invoke('analyze',model_batch,snapshot)
                 if self.detailed_reports:
                     result['purpose_reports']=[]
                     job['stage']='reporting';job['payload']=json.dumps(result);self.store.save_job(job)
             if self.detailed_reports:
-                from .reports import validate_report
                 completed={r['purpose_id'] for r in result['purpose_reports']}
                 for purpose in snapshot['purposes']:
                     if not purpose['enabled'] or purpose['id'] in completed:continue
@@ -233,7 +237,7 @@ class Runner:
                     evidence=[{**a,'content':'資料類型：本輪 AI 摘要，非原文。\n'+summaries[a['id']]['summary']+'\n'+summaries[a['id']]['relevance']} for a in batch if a['id'] in relevant]
                     if not evidence:continue
                     context={**snapshot,'_source_results':source_results}
-                    report=validate_report(self.invoke('report',purpose,evidence,context),purpose,evidence)
+                    report=self.invoke('report',purpose,evidence,context)
                     report['_execution']={'provider':getattr(self.analysis_model(),'provider','codex'),'model':getattr(self.analysis_model(),'model','unknown')}
                     result['purpose_reports'].append(report)
                     job['payload']=json.dumps(result);self.store.save_job(job)

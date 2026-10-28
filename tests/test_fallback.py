@@ -121,9 +121,11 @@ class AnalysisProviderTests(unittest.TestCase):
   self.assertEqual(execution['provider'],'claude');self.assertEqual(execution['model'],'claude-haiku-5-5')
   self.assertEqual(execution['search_execution']['provider'],'codex');self.assertIsNone(execution['fallback_reason'])
  def test_report_uses_claude_even_after_search_primary_reset(self):
-  self.claude.report=lambda *args:{'provider':'claude'}
+  from test_reports import report
+  purpose={'id':fixtures.PURPOSE};expected=report(purpose,[])
+  self.claude.report=lambda *args:expected
   self.runner.active=self.codex
-  self.assertEqual(self.runner.invoke('report',{},[],{}),{'provider':'claude'})
+  self.assertEqual(self.runner.invoke('report',purpose,[],{}),expected)
  def test_claude_failure_does_not_silently_use_codex_for_analysis(self):
   def fail(*args):raise CodexFailure('Claude quota','fallback_waiting_quota')
   self.claude.analyze=fail
