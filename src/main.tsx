@@ -67,6 +67,12 @@ function App() {
     | null
   >(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const beginDelete = (id: string) => {
+    setDeleteError("");
+    setConfirmDelete(id);
+  };
   const [trackingSaving, setTrackingSaving] = useState(false);
   const [trackingError, setTrackingError] = useState("");
   function startTracking(selection: TrackingSelection) {
@@ -241,21 +247,29 @@ function App() {
     });
   };
   const deleteTracking = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    setDeleteError("");
     const ids =
       confirmDelete === "all"
         ? visibleTracks.map((t) => t.id)
         : [confirmDelete!];
+    try {
     const { error } = await supabase!.rpc("delete_manual_tracks", {
       p_ids: ids,
     });
     if (error) {
-      setError(error.message);
-      return;
+      throw error;
     }
     setConfirmDelete(null);
     setTrack(null);
     await reload();
     setNotice("已移到回收區，文章與收藏保留。");
+    } catch (e) {
+      setDeleteError("無法刪除追蹤：" + (e as Error).message + "。請再試一次。");
+    } finally {
+      setDeleting(false);
+    }
   };
   const restoreTracking = async (id: string) => {
     const { error } = await supabase!.rpc("restore_manual_track", { p_id: id });
@@ -621,7 +635,7 @@ function App() {
                       手動新增追蹤
                     </button>
                     {visibleTracks.length > 0 && (
-                      <button onClick={() => setConfirmDelete("all")}>
+                      <button onClick={() => beginDelete("all")}>
                         清空全部追蹤
                       </button>
                     )}
@@ -981,7 +995,7 @@ function App() {
           />
           <button
             className="danger-action"
-            onClick={() => setConfirmDelete(track.id)}
+            onClick={() => beginDelete(track.id)}
           >
             刪除這個追蹤
           </button>
@@ -1063,11 +1077,12 @@ function App() {
           title={
             confirmDelete === "all" ? "清空全部延續追蹤？" : "刪除這個追蹤？"
           }
-          close={() => setConfirmDelete(null)}
+          close={() => { if (!deleting) setConfirmDelete(null); }}
         >
           <p>追蹤會移到回收區，可以復原。文章、來源與文章收藏會保留。</p>
-          <button className="primary" onClick={() => void deleteTracking()}>
-            確認移到回收區
+          {deleteError && <p className="alert error" role="alert">{deleteError}</p>}
+          <button className="primary" disabled={deleting} onClick={() => void deleteTracking()}>
+            {deleting ? "刪除中…" : deleteError ? "重試移到回收區" : "確認移到回收區"}
           </button>
         </Modal>
       )}

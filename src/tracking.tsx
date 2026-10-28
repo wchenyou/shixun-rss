@@ -140,7 +140,11 @@ export function TrackSummary({ track, data }: { track: Track; data: Dataset }) {
     days.includes(d),
   ).length;
   const latest = events[events.length - 1];
-  const source = data.articles.find((a) => a.id === track.origin_article_id);
+  const sources = data.articles.filter((a) => origin.has(a.id));
+  const originRun = data.runs.find((r) => r.id === track.origin_report_id);
+  const originReport = originRun?.config_snapshot.purpose_reports?.find(
+    (r) => r.purpose_id === track.purpose_id,
+  );
   return (
     <section className="tracking-overview">
       <p className="meta">手動建立 · {date(track.created_at)}</p>
@@ -206,11 +210,16 @@ export function TrackSummary({ track, data }: { track: Track; data: Dataset }) {
             )[track.origin_kind || ""] || "手動設定"}
           </p>
           <blockquote>{track.origin_excerpt}</blockquote>
-          {source && (
-            <a href={source.url} target="_blank" rel="noreferrer">
+          {track.origin_report_id && <p>
+            原報告：{originReport?.title || "原報告未包含在目前資料中"}
+            {originRun && <span className="meta"> · {date(originRun.published_at!)}</span>}
+          </p>}
+          {sources.map((source) => <p key={source.id}>
+            <a href={/^https?:\/\//i.test(source.url) ? source.url : "#"} target="_blank" rel="noreferrer">
               {source.title} ↗
             </a>
-          )}
+          </p>)}
+          {!sources.length && origin.size > 0 && <p>起始來源未包含在目前資料中。</p>}
         </details>
       )}
     </section>

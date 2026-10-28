@@ -1040,6 +1040,7 @@ h1 { text-wrap: balance; }
 }
 
 .manual-tracking-actions {
+  --muted: #596457;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1055,6 +1056,7 @@ h1 { text-wrap: balance; }
   padding: 0 0 24px;
 }
 .tracking-selection-help {
+  --muted: #596457;
   padding: 16px 0;
   border-block: 1px solid var(--line);
   margin-bottom: 24px;
@@ -1124,6 +1126,11 @@ h1 { text-wrap: balance; }
 }
 .budget-section {
   margin-bottom: 28px;
+  --muted: #596457;
+}
+.tracking-overview,
+.tracking-selection {
+  --muted: #596457;
 }
 .budget-section > .alert {
   color: var(--ink);
