@@ -23,6 +23,7 @@ class Cloud:
         for offset in range(0,1_000_000,1000):
             query={'owner_id':'eq.'+self.owner,'select':'*','limit':1000,'offset':offset,'order':'id'}
             if table=='track_notes':query['order']='track_id'
+            if table=='reader_settings':query['order']='owner_id'  # no id column; ordering by id returns HTTP 400
             if extra:query.update(extra)
             batch=self.request(table+'?'+urlencode(query))
             result.extend(batch)

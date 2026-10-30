@@ -28,12 +28,18 @@ const labels: Record<string, string> = {
   complete: "完成",
   partial: "部分完成",
   failed: "執行失敗",
+  budget_wait: "今日額度用完，等待重置",
+  filtered: "文章被篩選條件排除",
+  insufficient: "資料不足，未產生報告",
+  rss_partial: "部分來源失敗",
+  stale: "資料較舊",
   waiting_quota: "等待額度",
   upload_pending: "等待上傳",
   no_new: "沒有新文章",
   auth_required: "需要重新登入",
   quota_unknown: "額度狀態未知",
 };
+const STALE_MS = 36 * 3600 * 1000; // worker silent >36h => 資料較舊
 const time = (s: string | null | undefined) =>
   s
     ? new Date(s).toLocaleString("zh-TW", {
@@ -146,6 +152,8 @@ function App() {
   }, []);
   useEffect(() => {
     void reload().finally(() => setReady(true));
+    const timer = window.setInterval(() => void reload(), 60_000);
+    return () => window.clearInterval(timer);
   }, [reload]);
   async function write(
     table: string,
@@ -342,7 +350,11 @@ function App() {
         </nav>
         <div className="sidebar-bottom">
           <span className="status-dot" />
-          {node ? labels[node.status] || node.status : "等待主機連線"}
+          {node
+            ? Date.now() - new Date(node.last_seen).getTime() > STALE_MS
+              ? labels.stale
+              : labels[node.status] || node.status
+            : "等待主機連線"}
           <p>最後回報 {time(node?.last_seen)}</p>
           <div className="profile">
             <span>A</span>

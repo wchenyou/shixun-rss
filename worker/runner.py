@@ -143,7 +143,7 @@ class Runner:
         if not any(p['enabled'] for p in config['purposes']):
             self.status('idle','Configure at least one enabled purpose');return
         if not self.store.pending() and not self.web_search:
-            self.status('failed' if any(not s['ok'] for s in source_results) else 'no_new',
+            self.status('rss_partial' if any(not s['ok'] for s in source_results) else 'no_new',
                         'One or more RSS sources failed' if any(not s['ok'] for s in source_results) else None);return
         retry=self.store.get('next_retry',0)
         primary_reset=self.store.get('codex_wait',{}).get('next_retry_at')
@@ -195,7 +195,10 @@ class Runner:
             source_results=stamp.get('coverage',[])+source_results
             self.store.set('source_results',source_results)
         if not self.store.pending():
-            self.status('no_new');return
+            short=[c for c in source_results if c.get('insufficient')]
+            if short:self.status('insufficient','；'.join(c['name']+'：'+c['error'] for c in short))
+            else:self.status('no_new')
+            return
         # Resume persisted unfinished work; replan if any cloud settings/notes changed.
         unfinished=[j for j in self.store.jobs() if j['stage'] in ('analyzing','reporting')]
         if unfinished:
@@ -260,8 +263,10 @@ class Runner:
                 self.status(e.code,str(e),self.clock()+delay)
             return
         except Exception as e:
-            self.store.set('next_retry',self.clock()+3600);self.store.set('wait_status','failed');self.store.set('wait_reason','Invalid or incomplete model output')
-            self.status('failed','Invalid or incomplete model output',self.clock()+3600);return
+            import sys,traceback;traceback.print_exc(file=sys.stderr)  # was swallowed: root cause was invisible
+            reason='Invalid or incomplete model output ('+type(e).__name__+': '+str(e)[:200]+')'
+            self.store.set('next_retry',self.clock()+3600);self.store.set('wait_status','failed');self.store.set('wait_reason',reason)
+            self.status('failed',reason,self.clock()+3600);return
         if self.upload():self.status(payload['run']['status'])
     def wait(self,q):
         retry=q['next_retry_at'] or self.clock()+3600

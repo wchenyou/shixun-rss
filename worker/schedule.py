@@ -30,7 +30,7 @@ class DailySchedule:
     def preview(self):return {'timezone':'Asia/Taipei','due_directions':len(self.purpose_ids),'due_sources':len(self.source_ids)}
     def finish(self):
         status=self.store.get('status',{}).get('status')
-        if status in ('complete','partial','no_new') and not self.store.jobs() and not self.store.counts()['pending_articles']:
+        if status in ('complete','partial','no_new','insufficient') and not self.store.jobs() and not self.store.counts()['pending_articles']:
             ledger=self.store.get('daily_schedule',{})
             day=self.keys[0].split(':')[0] if self.keys else ''
             ledger={key:value for key,value in ledger.items() if key.startswith(day+':')}

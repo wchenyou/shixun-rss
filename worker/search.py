@@ -1,9 +1,24 @@
 """Live discovery through local Codex; evidence comes from actual tool results."""
-import json
+import json, os
+from datetime import datetime, timezone, timedelta
 from html.parser import HTMLParser
 from urllib.parse import urlsplit
 from .core import canonical_url, public_url, stable_id, now, clean, fetch_feed
 from .codex import CodexFailure
+
+
+MIN_FRESH=int(os.environ.get('SHIXUN_MIN_FRESH','3'))
+FRESH_DAYS=int(os.environ.get('SHIXUN_FRESH_DAYS','7'))
+
+
+def is_fresh(published,at=None):
+    """True only for a parseable, non-future date within FRESH_DAYS. Null/bad/future => not fresh."""
+    if not published:return False
+    try:dt=datetime.fromisoformat(published.replace('Z','+00:00'))
+    except ValueError:return False
+    if not dt.tzinfo:return False
+    at=at or datetime.now(timezone.utc)
+    return at-timedelta(days=FRESH_DAYS)<=dt<=at
 
 
 def discovery_prompt(config):
@@ -64,9 +79,10 @@ def retrieve(result, owner, fetcher=fetch_feed):
         if parser.title:title=clean(' '.join(parser.title))
         content='資料類型：公開網頁擷取；可能包含網站導覽文字，非付費全文。\n'+text[:20000]
         if parser.date:
-            from datetime import datetime
-            dt=datetime.fromisoformat(parser.date.replace('Z','+00:00'))
-            if dt.tzinfo:published=dt.isoformat()
+            try:
+                dt=datetime.fromisoformat(parser.date.replace('Z','+00:00'))
+                if dt.tzinfo:published=dt.isoformat()
+            except ValueError:pass  # bad date must not discard the fetched body
     except Exception:
         # Keep the tool's actual excerpt; never replace failed retrieval with model-generated text.
         content+='\n原頁全文未取得；只能依上述搜尋摘要分析，不推測未提供的細節。'
@@ -91,7 +107,7 @@ def discovered_articles(result,events,config,owner=None,fetcher=fetch_feed):
     if not searches:raise CodexFailure('Discovery produced no completed live web search','search_failed')
     notes={c['purpose_id']:c['note'] for c in result['coverage']}
     if set(notes)!=set(enabled):raise CodexFailure('Discovery did not cover every enabled purpose','search_failed')
-    counts={pid:0 for pid in enabled};articles={};failures={pid:0 for pid in enabled}
+    counts={pid:0 for pid in enabled};articles={};owners={};failures={pid:0 for pid in enabled}
     owner=owner or config['_owner_id']
     if len(result['articles'])>30:raise CodexFailure('Discovery exceeded article limit','search_failed')
     for selected in result['articles']:
@@ -102,9 +118,18 @@ def discovered_articles(result,events,config,owner=None,fetcher=fetch_feed):
         counts[pid]+=1
         if counts[pid]>6:raise CodexFailure('Discovery exceeded per-purpose limit','search_failed')
         if url in articles:continue
-        try:articles[url]=retrieve(observed[url],owner,fetcher)
+        try:articles[url]=retrieve(observed[url],owner,fetcher);owners[url]=pid
         except Exception:failures[pid]+=1
-    coverage=[{'name':'全網搜尋 · '+p['name'],'ok':not failures[pid],
-               'count':counts[pid]-failures[pid],'error':('部分網址無法取得' if failures[pid] else None),
+    fresh={pid:0 for pid in enabled};dated={pid:0 for pid in enabled}
+    for url,a in articles.items():
+        if a['published_at']:dated[owners[url]]+=1
+        if is_fresh(a['published_at']):fresh[owners[url]]+=1
+    blocked={pid for pid in enabled if fresh[pid]<MIN_FRESH}
+    coverage=[{'name':'全網搜尋 · '+p['name'],'ok':not failures[pid] and pid not in blocked,
+               'count':counts[pid]-failures[pid],'fresh':fresh[pid],'dated':dated[pid],'required':MIN_FRESH,
+               'insufficient':pid in blocked,
+               'error':(f'資料不足：找到 {counts[pid]-failures[pid]} 篇、{dated[pid]} 篇可確認日期、{fresh[pid]} 篇在 {FRESH_DAYS} 天內，需要 {MIN_FRESH} 篇' if pid in blocked
+                        else '部分網址無法取得' if failures[pid] else None),
                'note':notes[pid],'mode':'live','search_calls':searches} for pid,p in enabled.items()]
-    return list(articles.values()),coverage
+    kept=[a for url,a in articles.items() if owners[url] not in blocked]
+    return kept,coverage
